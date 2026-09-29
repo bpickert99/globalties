@@ -17,13 +17,15 @@ import {
 } from 'docx'
 import { dayRange, fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
-import type { Participant, ProgramType, Project, ScheduleItem, Settings, Staff } from './types'
+import { resourceOf, visitContacts } from './resources'
+import type { Contact, Participant, ProgramType, Project, Resource, ScheduleItem, Settings, Staff } from './types'
 
 export type ItineraryInput = {
   project: Project
   programType: ProgramType
   people: Participant[]
   items: ScheduleItem[]
+  resources: Resource[]
   staff: Staff[]
   settings: Settings
 }
@@ -101,9 +103,10 @@ function contactsPage({ project, staff, settings }: ItineraryInput): Paragraph[]
       para(''),
     )
   }
-  if (project.npa_org || project.npa_contacts.length) {
+  const npaTeam = [project.npa_manager, project.npa_associate].filter((c) => c.name.trim())
+  if (project.npa_org || npaTeam.length) {
     out.push(para(`Administered by ${project.npa_org}`, { bold: true }))
-    out.push(...lines(project.npa_contacts.map((c) => [c.name, c.phone, c.email].filter(Boolean).join(', '))), para(''))
+    out.push(...lines(npaTeam.map((c) => [c.name, c.phone, c.email].filter(Boolean).join(', '))), para(''))
   }
   if (project.oiv_contacts.length) {
     out.push(
@@ -118,8 +121,8 @@ function contactsPage({ project, staff, settings }: ItineraryInput): Paragraph[]
   if (settings.transport_block) {
     out.push(para('Local Transportation:', { bold: true }), ...lines(settings.transport_block.split('\n')), para(''))
   }
-  for (const d of project.drivers) {
-    out.push(para(`${d.title || 'Driver'}:`, { bold: true }), ...lines([d.name, d.phone]), para(''))
+  if (project.driver_name) {
+    out.push(para('Driver:', { bold: true }), ...lines([project.driver_name, project.driver_phone]), para(''))
   }
   return out
 }
@@ -156,20 +159,29 @@ function gridPage({ project, items }: ItineraryInput): (Paragraph | Table)[] {
   return out
 }
 
-function contactParagraphs(item: ScheduleItem): Paragraph[] {
-  return item.contacts.flatMap((c) => [...lines([c.name, c.title, c.email, c.phone]), para('', { size: 12 })])
+function contactParagraphs(contacts: Contact[]): Paragraph[] {
+  return contacts.flatMap((c) => [...lines([c.name, c.title, c.email, c.phone]), para('', { size: 12 })])
+}
+
+// Where / who / what for a visit to a resource.
+function resourceRows(item: ScheduleItem, resource: Resource): [string, Paragraph[]][] {
+  const rows: [string, Paragraph[]][] = []
+  const where = [resource.location, resource.address].filter(Boolean).join('\n')
+  if (where) rows.push(['Location:', [para(where), ...(resource.directions ? [para(''), para(resource.directions)] : [])]])
+  else if (resource.directions) rows.push(['', [para(resource.directions)]])
+  const contacts = visitContacts(item, resource)
+  if (contacts.length) rows.push(['Contact:', contactParagraphs(contacts)])
+  if (item.topic) rows.push(['Topic:', [para(item.topic)]])
+  if (resource.description) rows.push(['', [para(resource.description)]])
+  return rows
 }
 
 function itemBlock(item: ScheduleItem, input: ItineraryInput): (Paragraph | Table)[] {
   if (item.kind === 'note') return [para(item.title, { italics: true, after: 160 })]
   const time = fmtTimeRange(item.start_time, item.end_time)
   const rows: [string, Paragraph[]][] = [[time, [para(item.title, { bold: true })]]]
-  const where = [item.location, item.address].filter(Boolean).join('\n')
-  if (where) rows.push(['Location:', [para(where), ...(item.directions ? [para(''), para(item.directions)] : [])]])
-  else if (item.directions) rows.push(['', [para(item.directions)]])
-  if (item.contacts.length) rows.push(['Contact:', contactParagraphs(item)])
-  if (item.topic) rows.push(['Topic:', [para(item.topic)]])
-  if (item.description) rows.push(['', [para(item.description)]])
+  if (item.resource_id) rows.push(...resourceRows(item, resourceOf(item, input.resources)))
+  else if (item.description) rows.push(['', [para(item.description)]])
   item.restaurants.forEach((r, i) => rows.push([i === 0 ? 'Recommendation:' : '', lines([r.name, r.address, r.description])]))
   if (item.kind === 'home_hospitality') {
     const people = activePeople(input.people)

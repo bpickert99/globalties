@@ -61,9 +61,19 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
   )
 }
 
-const EMPTY_CONTACT: Contact = { name: '', title: '', phone: '', email: '' }
+export const blankContact = (): Contact => ({ name: '', title: '', phone: '', email: '' })
 
-export function ContactsEditor({ value, onChange, titleLabel = 'Title' }: { value: Contact[]; onChange: (v: Contact[]) => void; titleLabel?: string }) {
+export function ContactsEditor<T extends Contact>({
+  value,
+  onChange,
+  blank,
+  titleLabel = 'Title',
+}: {
+  value: T[]
+  onChange: (v: T[]) => void
+  blank: () => T
+  titleLabel?: string
+}) {
   const set = (i: number, patch: Partial<Contact>) => onChange(value.map((c, j) => (j === i ? { ...c, ...patch } : c)))
   return (
     <div className="contacts">
@@ -78,7 +88,7 @@ export function ContactsEditor({ value, onChange, titleLabel = 'Title' }: { valu
           </button>
         </div>
       ))}
-      <button type="button" className="btn small ghost" onClick={() => onChange([...value, { ...EMPTY_CONTACT }])}>
+      <button type="button" className="btn small ghost" onClick={() => onChange([...value, blank()])}>
         + Add contact
       </button>
     </div>

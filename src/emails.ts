@@ -3,7 +3,8 @@
 
 import { fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
-import type { Contact, EmailKey, HostGroup, Participant, Project, ScheduleItem, Settings } from './types'
+import { resourceOf, visitContacts } from './resources'
+import type { Contact, EmailKey, HostGroup, Participant, Project, Resource, ScheduleItem, Settings } from './types'
 
 export type Draft = { to: string; cc: string; subject: string; body: string }
 
@@ -11,6 +12,7 @@ export type EmailContext = {
   project: Project
   people: Participant[]
   items: ScheduleItem[]
+  resources: Resource[]
   settings: Settings
 }
 
@@ -32,9 +34,10 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? ''
 const emails = (contacts: Contact[]) => contacts.map((c) => c.email).filter(Boolean)
 const join = (list: string[]) => list.filter(Boolean).join('; ')
 
+// The NPA Program Manager is the billing contact.
 function billingContact(project: Project): string {
-  const c = project.npa_contacts[0]
-  if (!c) return '[Billing contact: name, position, organization, email, phone]'
+  const c = project.npa_manager
+  if (!c.name.trim()) return '[Billing contact: name, position, organization, email, phone]'
   return [c.name, c.title, project.npa_org, c.email, c.phone].filter(Boolean).join(', ')
 }
 
@@ -68,7 +71,7 @@ Billing Contact: ${billingContact(project)}
 
 function hotelNpaConnect({ project, people, settings }: EmailContext): Draft {
   return {
-    to: join([project.hotel_contact_email, ...emails(project.npa_contacts)]),
+    to: join([project.hotel_contact_email, ...emails([project.npa_manager, project.npa_associate])]),
     cc: settings.cc_email,
     subject: `Kansas City hotel: ${project.name}, ${dates(project)}`,
     body: `Hi all,
@@ -133,11 +136,12 @@ We would also love to know of specific details about your dinner! Please keep us
 }
 
 function partnerThanks(ctx: EmailContext, item: ScheduleItem): Draft {
+  const contacts = visitContacts(item, resourceOf(item, ctx.resources))
   return {
-    to: join(emails(item.contacts)),
+    to: join(emails(contacts)),
     cc: ctx.settings.ceo_email,
     subject: `Thank you for meeting with the ${ctx.project.name} group`,
-    body: `Hi ${or(firstName(item.contacts[0]?.name ?? ''), 'name')},
+    body: `Hi ${or(firstName(contacts[0]?.name ?? ''), 'name')},
 
 Thank you for meeting with this group! [Add personal note about how the meeting was impactful for the group and program.]
 

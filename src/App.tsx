@@ -5,6 +5,7 @@ import Login, { NewPassword } from './pages/Login'
 import Monday from './pages/Monday'
 import ProjectPage from './pages/Project'
 import Projects from './pages/Projects'
+import Resources from './pages/Resources'
 import SettingsPage from './pages/Settings'
 import Todo from './pages/Todo'
 import { must, supabase } from './supabase'
@@ -67,6 +68,7 @@ export default function App() {
         <nav>
           <NavLink to="/todo">To-Do</NavLink>
           <NavLink to="/projects">Projects</NavLink>
+          <NavLink to="/resources">Resources</NavLink>
           <NavLink to="/monday">
             Monday<span className="long"> Meeting</span>
           </NavLink>
@@ -81,6 +83,7 @@ export default function App() {
           <Route path="/todo" element={<Todo />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id/*" element={<ProjectPage />} />
+          <Route path="/resources" element={<Resources />} />
           <Route path="/monday" element={<Monday />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/todo" replace />} />

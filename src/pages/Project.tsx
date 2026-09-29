@@ -7,7 +7,7 @@ import Overview from '../project/Overview'
 import Participants from '../project/Participants'
 import Schedule from '../project/Schedule'
 import { must, supabase } from '../supabase'
-import type { Participant, ProgramType, Project, ScheduleItem, Settings, Staff, Task } from '../types'
+import type { Participant, ProgramType, Project, Resource, ScheduleItem, Settings, Staff, Task } from '../types'
 import { act, Loading, useData } from '../ui'
 
 export type ProjectData = {
@@ -17,6 +17,7 @@ export type ProjectData = {
   tasks: Task[]
   people: Participant[]
   items: ScheduleItem[]
+  resources: Resource[]
   settings: Settings
   staff: Staff[]
 }
@@ -26,12 +27,13 @@ const ROLE_ORDER = { participant: 0, interpreter: 1, liaison: 2 } as const
 export type TabProps = { data: ProjectData; reload: () => Promise<void> }
 
 async function load(id: string): Promise<ProjectData> {
-  const [project, types, tasks, people, items, settings, staff] = await Promise.all([
+  const [project, types, tasks, people, items, resources, settings, staff] = await Promise.all([
     supabase.from('projects').select('*').eq('id', id).single(),
     supabase.from('program_types').select('*').order('sort'),
     supabase.from('tasks').select('*').eq('project_id', id).order('sort'),
     supabase.from('participants').select('*').eq('project_id', id).order('sort').order('family_name'),
     supabase.from('schedule_items').select('*').eq('project_id', id),
+    supabase.from('resources').select('*').order('name'),
     supabase.from('settings').select('*').single(),
     supabase.from('staff').select('*').order('sort'),
   ])
@@ -46,6 +48,7 @@ async function load(id: string): Promise<ProjectData> {
     tasks: must(tasks) as Task[],
     people: (must(people) as Participant[]).sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]),
     items: must(items) as ScheduleItem[],
+    resources: must(resources) as Resource[],
     settings: must(settings) as Settings,
     staff: must(staff) as Staff[],
   }

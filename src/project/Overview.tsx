@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
-import type { Project } from '../types'
-import { act, ContactsEditor, Field, useData } from '../ui'
+import type { Contact, Project } from '../types'
+import { act, blankContact, ContactsEditor, Field, useData } from '../ui'
 
 type Hotel = Pick<Project, 'hotel_name' | 'hotel_address' | 'hotel_phone' | 'hotel_contact_name' | 'hotel_contact_email' | 'hotel_rate' | 'hotel_blurb'>
 
@@ -114,10 +114,13 @@ export default function Overview({ data, reload }: TabProps) {
       <section className="card form">
         <h2>National Program Agency</h2>
         {text('npa_org', 'Organization', 'Meridian International Center')}
-        <p className="muted small">The first contact is used as the billing contact in hotel and transportation emails.</p>
-        <ContactsEditor value={form.npa_contacts} onChange={(npa_contacts) => set({ npa_contacts })} />
+        <h3>Program Manager</h3>
+        <PersonFields value={form.npa_manager} onChange={(npa_manager) => set({ npa_manager })} />
+        <h3>Program Associate</h3>
+        <PersonFields value={form.npa_associate} onChange={(npa_associate) => set({ npa_associate })} />
+        <p className="muted small">Both are included on NPA emails. The Program Manager is the billing contact in hotel and transportation emails.</p>
         <h3>Office of International Visitors (State Department)</h3>
-        <ContactsEditor value={form.oiv_contacts} onChange={(oiv_contacts) => set({ oiv_contacts })} />
+        <ContactsEditor value={form.oiv_contacts} onChange={(oiv_contacts) => set({ oiv_contacts })} blank={blankContact} />
       </section>
 
       <section className="card form">
@@ -153,9 +156,12 @@ export default function Overview({ data, reload }: TabProps) {
       </section>
 
       <section className="card form">
-        <h2>Drivers</h2>
-        <p className="muted small">Listed on the itinerary contacts page (e.g. Airport Driver, Local Program Driver).</p>
-        <ContactsEditor value={form.drivers} onChange={(drivers) => set({ drivers })} titleLabel="Role" />
+        <h2>Agenda Kansas City driver</h2>
+        <div className="grid">
+          {text('driver_name', 'Driver name')}
+          {text('driver_phone', 'Driver phone')}
+        </div>
+        <p className="muted small">Listed under Local Transportation on the itinerary.</p>
       </section>
 
       <section className="card form">
@@ -169,5 +175,20 @@ export default function Overview({ data, reload }: TabProps) {
         </button>
       </div>
     </form>
+  )
+}
+
+function PersonFields({ value, onChange }: { value: Contact; onChange: (c: Contact) => void }) {
+  const field = (key: keyof Contact, label: string) => (
+    <Field label={label}>
+      <input value={value[key]} onChange={(e) => onChange({ ...value, [key]: e.target.value })} />
+    </Field>
+  )
+  return (
+    <div className="grid">
+      {field('name', 'Name')}
+      {field('phone', 'Phone')}
+      {field('email', 'Email')}
+    </div>
   )
 }

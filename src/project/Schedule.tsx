@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { dayRange, fmtLong, fmtTimeRange } from '../dates'
 import { activePeople, fullName, KIND_LABELS, sortItems, STATUS_LABELS } from '../logic'
 import type { TabProps } from '../pages/Project'
+import ResourceForm from '../ResourceForm'
+import { CATEGORY_LABELS, resourceOf, visitContacts } from '../resources'
 import { must, supabase } from '../supabase'
-import type { HostGroup, ItemKind, MeetingStatus, Restaurant, ScheduleItem } from '../types'
-import { act, ContactsEditor, Field, useData } from '../ui'
+import type { HostGroup, ItemKind, MeetingStatus, Resource, Restaurant, ScheduleItem } from '../types'
+import { act, Field } from '../ui'
 
 type Draft = Omit<ScheduleItem, 'id' | 'project_id' | 'created_at' | 'status_changed_at'>
 
@@ -14,10 +17,8 @@ const blank = (day: string): Draft => ({
   end_time: null,
   kind: 'meeting',
   title: '',
-  location: '',
-  address: '',
-  directions: '',
-  contacts: [],
+  resource_id: null,
+  contact_ids: [],
   topic: '',
   description: '',
   restaurants: [],
@@ -27,22 +28,12 @@ const blank = (day: string): Draft => ({
 })
 
 const STATUSES = Object.keys(STATUS_LABELS) as MeetingStatus[]
-const HAS_PLACE: ItemKind[] = ['meeting', 'activity', 'home_hospitality', 'meal']
-const HAS_DETAILS: ItemKind[] = ['meeting', 'activity']
-
-// Past meetings/activities from other projects, most recent per title, to reuse details.
-async function loadPast(projectId: string): Promise<ScheduleItem[]> {
-  const rows = must(
-    await supabase.from('schedule_items').select('*').in('kind', ['meeting', 'activity']).neq('project_id', projectId).order('day', { ascending: false }),
-  ) as ScheduleItem[]
-  const seen = new Set<string>()
-  return rows.filter((r) => !seen.has(r.title) && seen.add(r.title))
-}
+// Meetings and cultural activities are visits to a saved resource.
+const VISITS: ItemKind[] = ['meeting', 'activity']
 
 export default function Schedule({ data, reload }: TabProps) {
   const { project } = data
   const [editing, setEditing] = useState<{ id: string | null; day: string } | null>(null)
-  const past = useData(() => loadPast(project.id), [project.id]).data ?? []
   const items = sortItems(data.items)
   const days = dayRange(project.arrival_date, project.departure_date)
   const outside = items.filter((i) => !days.includes(i.day))
@@ -53,19 +44,21 @@ export default function Schedule({ data, reload }: TabProps) {
     await reload()
   }
 
+  const meta = (item: ScheduleItem) => {
+    if (!item.resource_id) return KIND_LABELS[item.kind]
+    const r = resourceOf(item, data.resources)
+    return [KIND_LABELS[item.kind], r.address.split('\n')[0], ...visitContacts(item, r).map((c) => c.name)].filter(Boolean).join(' · ')
+  }
+
   const itemRow = (item: ScheduleItem) =>
     editing?.id === item.id ? (
-      <ItemForm key={item.id} data={data} item={item} day={item.day} past={past} onDone={() => setEditing(null)} reload={reload} />
+      <ItemForm key={item.id} data={data} item={item} day={item.day} onDone={() => setEditing(null)} reload={reload} />
     ) : (
       <div key={item.id} className={`item kind-${item.kind}`} onClick={() => setEditing({ id: item.id, day: item.day })}>
         <div className="item-time">{fmtTimeRange(item.start_time, item.end_time)}</div>
         <div className="item-main">
           <div className="item-title">{item.title}</div>
-          <div className="muted small">
-            {KIND_LABELS[item.kind]}
-            {item.address && ` · ${item.address.split('\n')[0]}`}
-            {item.contacts[0] && ` · ${item.contacts[0].name}`}
-          </div>
+          <div className="muted small">{meta(item)}</div>
         </div>
         {item.status && (
           <select
@@ -87,12 +80,17 @@ export default function Schedule({ data, reload }: TabProps) {
 
   return (
     <div className="stack">
-      <div className="stats">
-        {STATUSES.map((s) => (
-          <span key={s} className={`status-${s}`}>
-            <b>{meetings.filter((m) => m.status === s).length}</b> {STATUS_LABELS[s].toLowerCase()}
-          </span>
-        ))}
+      <div className="row spread">
+        <div className="stats">
+          {STATUSES.map((s) => (
+            <span key={s} className={`status-${s}`}>
+              <b>{meetings.filter((m) => m.status === s).length}</b> {STATUS_LABELS[s].toLowerCase()}
+            </span>
+          ))}
+        </div>
+        <Link className="btn small" to={`/resources?project=${project.id}`}>
+          View on map
+        </Link>
       </div>
       {days.map((day) => (
         <section key={day} className="card day">
@@ -103,9 +101,7 @@ export default function Schedule({ data, reload }: TabProps) {
             </button>
           </div>
           {items.filter((i) => i.day === day).map(itemRow)}
-          {editing && editing.id === null && editing.day === day && (
-            <ItemForm data={data} day={day} past={past} onDone={() => setEditing(null)} reload={reload} />
-          )}
+          {editing && editing.id === null && editing.day === day && <ItemForm data={data} day={day} onDone={() => setEditing(null)} reload={reload} />}
         </section>
       ))}
       {outside.length > 0 && (
@@ -119,39 +115,37 @@ export default function Schedule({ data, reload }: TabProps) {
   )
 }
 
-function ItemForm({
-  data,
-  item,
-  day,
-  past,
-  onDone,
-  reload,
-}: {
-  data: TabProps['data']
-  item?: ScheduleItem
-  day: string
-  past: ScheduleItem[]
-  onDone: () => void
-  reload: () => Promise<void>
-}) {
+function ItemForm({ data, item, day, onDone, reload }: { data: TabProps['data']; item?: ScheduleItem; day: string; onDone: () => void; reload: () => Promise<void> }) {
   const [form, setForm] = useState<Draft>(() => {
     if (!item) return blank(day)
     const { id, project_id, created_at, status_changed_at, ...rest } = item
     void [id, project_id, created_at, status_changed_at]
     return rest
   })
-  const set = (patch: Partial<Draft>) => setForm({ ...form, ...patch })
+  const [resourceQuery, setResourceQuery] = useState(() => data.resources.find((r) => r.id === item?.resource_id)?.name ?? '')
+  const [creatingResource, setCreatingResource] = useState(false)
+  const set = (patch: Partial<Draft>) => setForm((f) => ({ ...f, ...patch }))
   const kind = form.kind
+  const isVisit = VISITS.includes(kind)
+  const resource = data.resources.find((r) => r.id === form.resource_id)
 
   function setKind(k: ItemKind) {
-    set({ kind: k, status: k === 'meeting' ? (form.status ?? 'planned') : null })
+    const visit = VISITS.includes(k)
+    set({
+      kind: k,
+      status: k === 'meeting' ? (form.status ?? 'planned') : null,
+      ...(visit ? {} : { resource_id: null, contact_ids: [] }),
+    })
   }
 
-  function setTitle(title: string) {
-    const match = past.find((p) => p.title === title)
-    if (match && !item) {
-      set({ title, location: match.location, address: match.address, directions: match.directions, contacts: match.contacts, topic: match.topic, description: match.description })
-    } else set({ title })
+  // Choosing a resource fills the title (when it still matches the old resource) and its contact.
+  function chooseResource(r: Resource | undefined) {
+    const prevName = resource?.name ?? ''
+    set({
+      resource_id: r?.id ?? null,
+      contact_ids: r && r.contacts.length === 1 ? [r.contacts[0].id] : [],
+      ...(r && (!form.title || form.title === prevName) ? { title: r.name } : {}),
+    })
   }
 
   async function submit(e: FormEvent) {
@@ -173,6 +167,25 @@ function ItemForm({
     onDone()
     await reload()
   }
+
+  // A new resource is its own form, shown in place of this one (forms can't nest).
+  if (creatingResource) {
+    return (
+      <ResourceForm
+        initialName={resourceQuery}
+        onCancel={() => setCreatingResource(false)}
+        onSaved={async (saved, notice) => {
+          if (notice) alert(notice)
+          await reload()
+          setCreatingResource(false)
+          setResourceQuery(saved.name)
+          set({ resource_id: saved.id, contact_ids: saved.contacts.length === 1 ? [saved.contacts[0].id] : [], ...(form.title ? {} : { title: saved.name }) })
+        }}
+      />
+    )
+  }
+
+  const typedMatch = data.resources.find((r) => r.name.toLowerCase() === resourceQuery.trim().toLowerCase())
 
   return (
     <form className="item-form" onSubmit={submit}>
@@ -211,47 +224,80 @@ function ItemForm({
           </Field>
         )}
       </div>
-      <Field label={kind === 'note' ? 'Note text (italic in itinerary)' : kind === 'meeting' ? 'Organization / meeting title' : 'Title'} wide>
-        <input
-          required
-          list={HAS_DETAILS.includes(kind) ? 'past-titles' : undefined}
-          value={form.title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={kind === 'flight' ? 'Arrive on American Airlines #3764 from Chicago, IL' : kind === 'transport' ? 'Depart Hotel' : kind === 'meal' ? 'Lunch' : ''}
-        />
-        <datalist id="past-titles">
-          {past.map((p) => (
-            <option key={p.id} value={p.title} />
-          ))}
-        </datalist>
-      </Field>
-      {HAS_DETAILS.includes(kind) && !item && past.length > 0 && <p className="muted small">Pick an organization you've used before to fill in its address, contact and description.</p>}
-      {HAS_PLACE.includes(kind) && kind !== 'meal' && kind !== 'home_hospitality' && (
-        <div className="grid">
-          <Field label="Location (building, room)">
-            <input value={form.location} onChange={(e) => set({ location: e.target.value })} />
+
+      {isVisit && (
+        <div className="resource-pick">
+          <Field label="Resource (organization or place)" wide>
+            <input
+              list="resource-names"
+              value={resourceQuery}
+              placeholder="Start typing a saved resource…"
+              onChange={(e) => {
+                setResourceQuery(e.target.value)
+                chooseResource(data.resources.find((r) => r.name.toLowerCase() === e.target.value.trim().toLowerCase()))
+              }}
+            />
+            <datalist id="resource-names">
+              {data.resources.map((r) => (
+                <option key={r.id} value={r.name} />
+              ))}
+            </datalist>
           </Field>
-          <Field label="Address">
-            <textarea rows={2} value={form.address} onChange={(e) => set({ address: e.target.value })} />
-          </Field>
+          {!typedMatch && (
+            <button type="button" className="btn small" onClick={() => setCreatingResource(true)}>
+              + Save {resourceQuery.trim() ? `"${resourceQuery.trim()}"` : 'a new resource'} to Resources
+            </button>
+          )}
+          {resource && (
+            <div className="resource-summary">
+              <div className="muted small">
+                {CATEGORY_LABELS[resource.category]}
+                {resource.address && ` · ${resource.address.replace(/\n/g, ', ')}`}
+                {resource.lat === null && ' · not on map'} ·{' '}
+                <Link to={`/resources?id=${resource.id}`} target="_blank">
+                  Edit resource
+                </Link>
+              </div>
+              {resource.contacts.length > 0 ? (
+                <div className="checks">
+                  <span className="muted small">Contacts for this visit:</span>
+                  {resource.contacts.map((c) => (
+                    <label key={c.id} className="toggle">
+                      <input
+                        type="checkbox"
+                        checked={form.contact_ids.includes(c.id)}
+                        onChange={(e) => set({ contact_ids: e.target.checked ? [...form.contact_ids, c.id] : form.contact_ids.filter((x) => x !== c.id) })}
+                      />
+                      {c.name}
+                      {c.title && <span className="muted"> ({c.title})</span>}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted small">No contacts saved for this resource yet. Add them with "Edit resource".</p>
+              )}
+            </div>
+          )}
         </div>
       )}
-      {HAS_DETAILS.includes(kind) && (
-        <>
-          <Field label="How to get to the meeting space" wide>
-            <textarea rows={2} value={form.directions} onChange={(e) => set({ directions: e.target.value })} />
-          </Field>
-          <div className="field wide">
-            <span>Contacts</span>
-            <ContactsEditor value={form.contacts} onChange={(contacts) => set({ contacts })} />
-          </div>
-          <Field label="Topic" wide>
-            <textarea rows={2} value={form.topic} onChange={(e) => set({ topic: e.target.value })} />
-          </Field>
-        </>
+
+      <Field label={kind === 'note' ? 'Note text (italic in itinerary)' : isVisit ? 'Title on itinerary' : 'Title'} wide>
+        <input
+          required
+          value={form.title}
+          onChange={(e) => set({ title: e.target.value })}
+          placeholder={
+            kind === 'flight' ? 'Arrive on American Airlines #3764 from Chicago, IL' : kind === 'transport' ? 'Depart Hotel' : kind === 'meal' ? 'Lunch' : isVisit ? 'Workshop: Midwest Center for Nonprofit Leadership' : ''
+          }
+        />
+      </Field>
+      {isVisit && (
+        <Field label="Topic for this visit" wide>
+          <textarea rows={2} value={form.topic} onChange={(e) => set({ topic: e.target.value })} />
+        </Field>
       )}
-      {(HAS_DETAILS.includes(kind) || kind === 'home_hospitality') && (
-        <Field label={kind === 'home_hospitality' ? 'Introduction' : 'Organization description'} wide>
+      {kind === 'home_hospitality' && (
+        <Field label="Introduction" wide>
           <textarea rows={3} value={form.description} onChange={(e) => set({ description: e.target.value })} />
         </Field>
       )}
@@ -261,7 +307,9 @@ function ItemForm({
         <textarea rows={2} value={form.internal_notes} onChange={(e) => set({ internal_notes: e.target.value })} />
       </Field>
       <div className="row">
-        <button className="btn primary">Save</button>
+        <button className="btn primary" disabled={isVisit && !form.resource_id} title={isVisit && !form.resource_id ? 'Choose or save a resource first' : undefined}>
+          Save
+        </button>
         <button type="button" className="btn ghost" onClick={onDone}>
           Cancel
         </button>

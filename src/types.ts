@@ -61,7 +61,8 @@ export type Project = {
   departure_date: string
   sharepoint_url: string
   npa_org: string
-  npa_contacts: Contact[]
+  npa_manager: Contact
+  npa_associate: Contact
   oiv_contacts: Contact[]
   hotel_name: string
   hotel_address: string
@@ -70,7 +71,8 @@ export type Project = {
   hotel_contact_email: string
   hotel_rate: string
   hotel_blurb: string
-  drivers: Contact[]
+  driver_name: string
+  driver_phone: string
   home_hospitality: boolean
   has_event: boolean
   notes: string
@@ -142,10 +144,8 @@ export type ScheduleItem = {
   end_time: string | null
   kind: ItemKind
   title: string
-  location: string
-  address: string
-  directions: string
-  contacts: Contact[]
+  resource_id: string | null
+  contact_ids: string[]
   topic: string
   description: string
   restaurants: Restaurant[]
@@ -153,5 +153,25 @@ export type ScheduleItem = {
   status: MeetingStatus | null
   status_changed_at: string
   internal_notes: string
+  created_at: string
+}
+
+export type ResourceCategory = 'nonprofit' | 'government' | 'education' | 'business' | 'cultural' | 'media' | 'health' | 'faith' | 'other'
+
+export type ResourceContact = Contact & { id: string }
+
+export type Resource = {
+  id: string
+  name: string
+  category: ResourceCategory
+  address: string
+  lat: number | null
+  lng: number | null
+  location: string
+  directions: string
+  description: string
+  website: string
+  contacts: ResourceContact[]
+  notes: string
   created_at: string
 }
