@@ -79,7 +79,6 @@ export default function Overview({ data, reload }: TabProps) {
           </Field>
           {text('name', 'Project name')}
           {text('subtitle', 'Subtitle (itinerary cover)', 'A Single Country Project for China')}
-          {text('reference', 'Reference #', '26.9')}
           {text('countries', 'Countries')}
           <Field label="Accepted on">
             <input type="date" value={form.accepted_on} onChange={(e) => set({ accepted_on: e.target.value })} />

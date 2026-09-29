@@ -81,8 +81,7 @@ export default function ProjectPage() {
       <div className="page-head">
         <div>
           <div className="muted small">
-            {data.programType.name}
-            {project.reference && ` · ${project.reference}`} · {stage(project, data.tasks)}
+            {data.programType.name} · {stage(project, data.tasks)}
           </div>
           <h1>{project.name}</h1>
           <div className="muted">{[project.countries, fmtRange(project.arrival_date, project.departure_date)].filter(Boolean).join(' · ')}</div>

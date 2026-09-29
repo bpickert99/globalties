@@ -46,7 +46,6 @@ export default function Projects() {
             <Link key={p.id} to={`/projects/${p.id}`} className={inKc ? 'card project-card live' : 'card project-card'}>
               <div className="card-top">
                 <span className="chip">{typeName.get(p.program_type_id)}</span>
-                {p.reference && <span className="muted small">{p.reference}</span>}
               </div>
               <h2>{p.name}</h2>
               <div className="muted">{[p.countries, fmtRange(p.arrival_date, p.departure_date)].filter(Boolean).join(' · ')}</div>
@@ -71,7 +70,6 @@ function NewProject({ types, onCancel, onCreated }: { types: ProgramType[]; onCa
   const [form, setForm] = useState({
     program_type_id: types[0]?.id ?? '',
     name: '',
-    reference: '',
     countries: '',
     accepted_on: today(),
     arrival_date: '',
@@ -106,9 +104,6 @@ function NewProject({ types, onCancel, onCreated }: { types: ProgramType[]; onCa
         </Field>
         <Field label="Project name">
           <input required value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="American Philanthropy" />
-        </Field>
-        <Field label="Reference #">
-          <input value={form.reference} onChange={(e) => set({ reference: e.target.value })} placeholder="26.9" />
         </Field>
         <Field label="Countries">
           <input value={form.countries} onChange={(e) => set({ countries: e.target.value })} placeholder="China" />

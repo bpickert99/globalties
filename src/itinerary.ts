@@ -218,7 +218,10 @@ function detailPages(input: ItineraryInput): (Paragraph | Table)[] {
 
 export function itineraryFileName(project: Project): string {
   const safe = (s: string) => s.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '')
-  return `${[project.reference, safe(project.name), 'Itinerary'].filter(Boolean).join('_')}.docx`
+  // GTKC convention: YY.M of arrival, then countries and name, e.g. 26.9_China_American_Philanthropy_Itinerary.docx
+  const arrival = parseDate(project.arrival_date)
+  const yearMonth = `${String(arrival.getFullYear()).slice(2)}.${arrival.getMonth() + 1}`
+  return `${[yearMonth, safe(project.countries), safe(project.name), 'Itinerary'].filter(Boolean).join('_')}.docx`
 }
 
 export function buildItinerary(input: ItineraryInput): Document {

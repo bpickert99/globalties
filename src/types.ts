@@ -55,7 +55,6 @@ export type Project = {
   program_type_id: string
   name: string
   subtitle: string
-  reference: string
   countries: string
   accepted_on: string
   arrival_date: string
