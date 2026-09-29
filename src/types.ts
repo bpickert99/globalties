@@ -6,6 +6,7 @@ export type EmailKey =
   | 'hotel_request'
   | 'hotel_npa_connect'
   | 'transport_request'
+  | 'transport_calendar'
   | 'hh_host_details'
   | 'partner_thanks'
   | 'hh_thanks'
@@ -63,6 +64,8 @@ export type Project = {
   npa_org: string
   npa_manager: Contact
   npa_associate: Contact
+  npa_address: string
+  billing_contact: 'manager' | 'associate'
   oiv_contacts: Contact[]
   hotel_name: string
   hotel_address: string
@@ -73,6 +76,10 @@ export type Project = {
   hotel_blurb: string
   driver_name: string
   driver_phone: string
+  luggage_count: number | null
+  transport_sent: TransportSnapshot | null
+  transport_sent_at: string | null
+  transport_log: TransportLogEntry[]
   home_hospitality: boolean
   has_event: boolean
   notes: string
@@ -175,3 +182,8 @@ export type Resource = {
   notes: string
   created_at: string
 }
+
+// What Agenda USA was last told, to detect changes that still need to reach them.
+export type TransportSnapshot = { passengers: number; luggage: number | null; hotel: string; days: Record<string, string> }
+
+export type TransportLogEntry = { date: string; note: string }

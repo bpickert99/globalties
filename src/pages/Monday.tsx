@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { addDays, daysBetween, fmtRange, fmtShort, fmtWeekdayShort, today, weekStart } from '../dates'
 import { stage, taskApplies, taskDue } from '../logic'
 import { must, supabase } from '../supabase'
-import type { Project, ScheduleItem, Task } from '../types'
+import { changesSince, snapshot } from '../transport'
+import type { Participant, Project, ScheduleItem, Task } from '../types'
 import { CopyButton, Loading, useData } from '../ui'
 
 const HORIZON_DAYS = 56
@@ -11,8 +12,9 @@ async function load() {
   const projects = must(await supabase.from('projects').select('*').is('closed_at', null).order('arrival_date')) as Project[]
   const ids = projects.map((p) => p.id)
   const tasks = must(await supabase.from('tasks').select('*').in('project_id', ids).is('done_at', null).order('sort')) as Task[]
-  const meetings = must(await supabase.from('schedule_items').select('*').in('project_id', ids).eq('kind', 'meeting').order('day')) as ScheduleItem[]
-  return { projects, tasks, meetings }
+  const items = must(await supabase.from('schedule_items').select('*').in('project_id', ids).order('day')) as ScheduleItem[]
+  const people = must(await supabase.from('participants').select('*').in('project_id', ids)) as Participant[]
+  return { projects, tasks, meetings: items.filter((i) => i.kind === 'meeting'), items, people }
 }
 
 type Section = {
@@ -21,6 +23,7 @@ type Section = {
   awaiting: ScheduleItem[]
   fellThrough: ScheduleItem[]
   tasks: { task: Task; due: string }[]
+  agendaChanges: string[]
 }
 
 function build(data: Awaited<ReturnType<typeof load>>): Section[] {
@@ -30,7 +33,9 @@ function build(data: Awaited<ReturnType<typeof load>>): Section[] {
     .filter((p) => daysBetween(now, p.arrival_date) <= HORIZON_DAYS)
     .map((project) => {
       const meetings = data.meetings.filter((m) => m.project_id === project.id)
+      const current = snapshot(project, data.people.filter((p) => p.project_id === project.id), data.items.filter((i) => i.project_id === project.id))
       return {
+        agendaChanges: project.transport_sent ? changesSince(project.transport_sent, current) : [],
         project,
         toRequest: meetings.filter((m) => m.status === 'planned'),
         awaiting: meetings.filter((m) => m.status === 'requested'),
@@ -52,6 +57,7 @@ function asText(sections: Section[], allTasks: Task[]): string {
     if (s.toRequest.length) out.push('  Meeting requests to send:', ...s.toRequest.map((m) => `    • ${m.title}`))
     if (s.awaiting.length) out.push('  Awaiting reply:', ...s.awaiting.map((m) => `    • ${m.title} (requested ${fmtShort(m.status_changed_at.slice(0, 10))})`))
     if (s.fellThrough.length) out.push('  Fell through:', ...s.fellThrough.map((m) => `    • ${m.title}`))
+    if (s.agendaChanges.length) out.push('  Agenda USA needs an update:', ...s.agendaChanges.map((c) => `    • ${c}`))
     if (s.tasks.length) out.push('  Due this week / overdue:', ...s.tasks.map((t) => `    • ${t.task.title} (${fmtShort(t.due)})`))
     out.push('')
   }
@@ -113,12 +119,13 @@ export default function Monday() {
               s.awaiting.map((m) => `${m.title} (requested ${fmtShort(m.status_changed_at.slice(0, 10))})`),
             )}
             {list('Fell through', s.fellThrough.map((m) => m.title), 'warn')}
+            {list('Agenda USA needs an update', s.agendaChanges, 'warn')}
             {list(
               'Due this week / overdue',
               s.tasks.map((t) => `${t.task.title} — ${t.due < now ? 'overdue, ' : ''}${fmtWeekdayShort(t.due)}`),
             )}
           </div>
-          {!s.toRequest.length && !s.awaiting.length && !s.fellThrough.length && !s.tasks.length && <p className="muted small">Nothing to discuss this week.</p>}
+          {!s.toRequest.length && !s.awaiting.length && !s.fellThrough.length && !s.tasks.length && !s.agendaChanges.length && <p className="muted small">Nothing to discuss this week.</p>}
         </section>
       ))}
     </div>

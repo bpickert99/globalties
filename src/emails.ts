@@ -4,7 +4,8 @@
 import { fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
 import { resourceOf, visitContacts } from './resources'
-import type { Contact, EmailKey, HostGroup, Participant, Project, Resource, ScheduleItem, Settings } from './types'
+import { agendaSubject, calendar, calendarText, passengers } from './transport'
+import type { Contact, EmailKey, HostGroup, Participant, ProgramType, Project, Resource, ScheduleItem, Settings } from './types'
 
 export type Draft = { to: string; cc: string; subject: string; body: string }
 
@@ -13,6 +14,7 @@ export type EmailContext = {
   people: Participant[]
   items: ScheduleItem[]
   resources: Resource[]
+  programType: ProgramType
   settings: Settings
 }
 
@@ -22,7 +24,8 @@ export type DraftTarget = { key: EmailKey; label: string; build: () => Draft }
 export const EMAIL_LABELS: Record<EmailKey, string> = {
   hotel_request: 'Request rooms from hotel',
   hotel_npa_connect: 'Connect hotel and NPA',
-  transport_request: 'Request transportation (Agenda USA)',
+  transport_request: 'Agenda USA: book transportation',
+  transport_calendar: 'Agenda USA: calendar & driver',
   hh_host_details: 'Home hospitality host details',
   partner_thanks: 'Meeting partner thank-you',
   hh_thanks: 'Home hospitality host thank-you',
@@ -34,11 +37,27 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? ''
 const emails = (contacts: Contact[]) => contacts.map((c) => c.email).filter(Boolean)
 const join = (list: string[]) => list.filter(Boolean).join('; ')
 
-// The NPA Program Manager is the billing contact.
+// Whichever NPA team member the project names as billing contact.
 function billingContact(project: Project): string {
-  const c = project.npa_manager
+  const c = project.billing_contact === 'manager' ? project.npa_manager : project.npa_associate
   if (!c.name.trim()) return '[Billing contact: name, position, organization, email, phone]'
-  return [c.name, c.title, project.npa_org, c.email, c.phone].filter(Boolean).join(', ')
+  return [c.name, c.title, project.npa_org, project.npa_address.replace(/\n/g, ', '), c.phone, c.email].filter(Boolean).join(', ')
+}
+
+// Billing block laid out on separate lines, as Agenda receives it.
+function billingBlock(project: Project): string {
+  const c = project.billing_contact === 'manager' ? project.npa_manager : project.npa_associate
+  if (!c.name.trim()) return '[Billing contact: name, position, organization, address, phone, email]'
+  return [c.name, c.title, project.npa_org, project.npa_address, c.phone, c.email].filter(Boolean).join('\n')
+}
+
+// "IVLP WHA Youth in the Political Process": program type, countries/region, name.
+function programLabel({ project, programType }: EmailContext): string {
+  return [programType.name.split(' (')[0], project.countries, project.name].filter(Boolean).join(' ')
+}
+
+function luggage(project: Project): string {
+  return project.luggage_count === null ? '[approx. number of bags]' : `Approx. ${project.luggage_count} bags`
 }
 
 function dates(project: Project): string {
@@ -82,19 +101,48 @@ For future communication, please make sure to keep me and my colleague on the cc
   }
 }
 
-function transportRequest({ project, people, settings }: EmailContext): Draft {
+// Step 1: get the program on Agenda's calendar.
+function transportRequest(ctx: EmailContext): Draft {
+  const { project, people, settings } = ctx
   return {
     to: settings.transport_email,
-    cc: '',
-    subject: `Transportation: ${project.name}, ${dates(project)}`,
+    cc: settings.cc_email,
+    subject: agendaSubject(project),
     body: `Hi ${or(settings.transport_contact_name, 'name')},
 
-Hope you are doing well! I wanted to reach out about availability of transportation for the upcoming program. Details below:
+Hope you are doing well! I wanted to get the program below on your calendar:
 
-Program Name: ${project.name}
-Dates: ${dates(project)}
-Passenger Count: ${activePeople(people).length || '[XX]'} [any details of specific vehicle size]
-Billing Contact: ${billingContact(project)}`,
+${programLabel(ctx)}
+${dates(project)}
+Passengers: ${passengers(people) || '[XX]'}. ${luggage(project)}.
+
+Billing Contact:
+${billingBlock(project)}
+
+Let me know if you have availability and once it is added within your system. Thank you!`,
+  }
+}
+
+// Step 2: the day-by-day calendar and the driver question. Resend whenever it changes.
+function transportCalendar(ctx: EmailContext): Draft {
+  const { project, people, items, settings } = ctx
+  return {
+    to: settings.transport_email,
+    cc: settings.cc_email,
+    subject: agendaSubject(project),
+    body: `Hi ${or(settings.transport_contact_name, 'name')},
+
+Below are the details for the ${programLabel(ctx)} in Kansas City from ${dates(project)}.${project.luggage_count === null ? '' : ` We will need plenty of space for their luggage. They are coming with approximately ${project.luggage_count} suitcases.`}
+
+Could you let me know the driver for this program?
+
+Passengers: ${passengers(people) || '[XX]'}
+Hotel: ${or(project.hotel_name, 'hotel')}
+Overarching Calendar:
+
+${calendarText(calendar(project, items))}
+
+Let me know if you have any questions.`,
   }
 }
 
@@ -172,6 +220,7 @@ export function draftTargets(ctx: EmailContext): DraftTarget[] {
     { key: 'hotel_request', label: EMAIL_LABELS.hotel_request, build: () => hotelRequest(ctx) },
     { key: 'hotel_npa_connect', label: EMAIL_LABELS.hotel_npa_connect, build: () => hotelNpaConnect(ctx) },
     { key: 'transport_request', label: EMAIL_LABELS.transport_request, build: () => transportRequest(ctx) },
+    { key: 'transport_calendar', label: EMAIL_LABELS.transport_calendar, build: () => transportCalendar(ctx) },
   ]
   const sorted = sortItems(ctx.items)
   for (const item of sorted.filter((i) => i.kind === 'home_hospitality')) {

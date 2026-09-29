@@ -6,6 +6,7 @@ import Emails from '../project/Emails'
 import Overview from '../project/Overview'
 import Participants from '../project/Participants'
 import Schedule from '../project/Schedule'
+import Transportation from '../project/Transportation'
 import { must, supabase } from '../supabase'
 import type { Participant, ProgramType, Project, Resource, ScheduleItem, Settings, Staff, Task } from '../types'
 import { act, Loading, useData } from '../ui'
@@ -76,6 +77,7 @@ export default function ProjectPage() {
     ['checklist', `Checklist (${prog.done}/${prog.total})`],
     ['participants', 'Participants'],
     ['schedule', 'Schedule'],
+    ['transportation', 'Transportation'],
     ['emails', 'Emails'],
   ]
 
@@ -124,6 +126,7 @@ export default function ProjectPage() {
         <Route path="checklist" element={<Checklist data={data} reload={reload} />} />
         <Route path="participants" element={<Participants data={data} reload={reload} />} />
         <Route path="schedule" element={<Schedule data={data} reload={reload} />} />
+        <Route path="transportation" element={<Transportation data={data} reload={reload} />} />
         <Route path="emails" element={<Emails data={data} reload={reload} />} />
         <Route path="*" element={<Navigate to="overview" replace />} />
       </Routes>

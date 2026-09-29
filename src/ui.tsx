@@ -61,6 +61,26 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
   )
 }
 
+// Copies formatted HTML (pastes as a table in Outlook) with a plain-text alternative.
+export function CopyRichButton({ html, text, label }: { html: string; text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      className="btn small"
+      onClick={async () => {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([text], { type: 'text/plain' }) }),
+        ])
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+    >
+      {copied ? 'Copied ✓' : label}
+    </button>
+  )
+}
+
 export const blankContact = (): Contact => ({ name: '', title: '', phone: '', email: '' })
 
 export function ContactsEditor<T extends Contact>({

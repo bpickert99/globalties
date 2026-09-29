@@ -114,11 +114,22 @@ export default function Overview({ data, reload }: TabProps) {
       <section className="card form">
         <h2>National Program Agency</h2>
         {text('npa_org', 'Organization', 'Meridian International Center')}
+        <Field label="Mailing address (for billing)" wide>
+          <textarea rows={2} value={form.npa_address} placeholder={'1828 L Street N.W., Suite 1200\nWashington, D.C. 20036'} onChange={(e) => set({ npa_address: e.target.value })} />
+        </Field>
         <h3>Program Manager</h3>
         <PersonFields value={form.npa_manager} onChange={(npa_manager) => set({ npa_manager })} />
         <h3>Program Associate</h3>
         <PersonFields value={form.npa_associate} onChange={(npa_associate) => set({ npa_associate })} />
-        <p className="muted small">Both are included on NPA emails. The Program Manager is the billing contact in hotel and transportation emails.</p>
+        <div className="grid">
+          <Field label="Billing contact (hotel and Agenda USA emails)">
+            <select value={form.billing_contact} onChange={(e) => set({ billing_contact: e.target.value as Project['billing_contact'] })}>
+              <option value="manager">{form.npa_manager.name || 'Program Manager'}</option>
+              <option value="associate">{form.npa_associate.name || 'Program Associate'}</option>
+            </select>
+          </Field>
+        </div>
+        <p className="muted small">Both are included on NPA emails and the itinerary.</p>
         <h3>Office of International Visitors (State Department)</h3>
         <ContactsEditor value={form.oiv_contacts} onChange={(oiv_contacts) => set({ oiv_contacts })} blank={blankContact} />
       </section>
@@ -155,14 +166,6 @@ export default function Overview({ data, reload }: TabProps) {
         </Field>
       </section>
 
-      <section className="card form">
-        <h2>Agenda Kansas City driver</h2>
-        <div className="grid">
-          {text('driver_name', 'Driver name')}
-          {text('driver_phone', 'Driver phone')}
-        </div>
-        <p className="muted small">Listed under Local Transportation on the itinerary.</p>
-      </section>
 
       <section className="card form">
         <h2>Notes</h2>
@@ -187,6 +190,7 @@ function PersonFields({ value, onChange }: { value: Contact; onChange: (c: Conta
   return (
     <div className="grid">
       {field('name', 'Name')}
+      {field('title', 'Title')}
       {field('phone', 'Phone')}
       {field('email', 'Email')}
     </div>

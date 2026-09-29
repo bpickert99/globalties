@@ -75,6 +75,8 @@ textarea { width: 100%; resize: vertical; }
 .chip.warn { background: #fdf0e6; color: var(--warn); }
 .notice { background: #eef4fb; border: 1px solid #cfe0f3; padding: 10px 12px; border-radius: 8px; margin: 0; font-size: 0.92rem; }
 .notice.warn { background: #fdf0e6; border-color: #f2d1b6; }
+.notice.ok { background: #eaf5ee; border-color: #c4e3cf; }
+.notice ul { margin: 6px 0; padding-left: 20px; }
 
 /* Cards & forms */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
@@ -196,6 +198,14 @@ tr.divider td { background: #f7f8fa; font-weight: 600; color: var(--muted); font
 .mm-list ul { margin: 0; padding-left: 18px; font-size: 0.92rem; }
 .mm-list li { margin: 3px 0; }
 .mm-list.warn h3 { color: var(--danger); }
+
+/* Transportation */
+table.cal th { background: #eef1f5; color: var(--text); text-align: center; white-space: normal; border: 1px solid var(--line); }
+table.cal td { border: 1px solid var(--line); font-size: 0.85rem; min-width: 120px; }
+table.cal td div + div { margin-top: 8px; }
+.call-form input[type='date'] { flex: none; min-width: 0; }
+.call-form input:not([type='date']) { flex: 1; min-width: 200px; }
+.log-entry { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid #eef1f5; }
 
 /* Resources & map */
 .resources-page { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; align-items: start; }
