@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { addDays, daysBetween, fmtRange, fmtShort, fmtWeekdayShort, today, weekStart } from '../dates'
 import { stage, taskApplies, taskDue } from '../logic'
 import { must, supabase } from '../supabase'
+import { hotelChanges, hotelSnapshot } from '../hotel'
 import { changesSince, snapshot } from '../transport'
 import type { Participant, Project, ScheduleItem, Task } from '../types'
 import { CopyButton, Loading, useData } from '../ui'
@@ -24,6 +25,7 @@ type Section = {
   fellThrough: ScheduleItem[]
   tasks: { task: Task; due: string }[]
   agendaChanges: string[]
+  hotelChanges: string[]
 }
 
 function build(data: Awaited<ReturnType<typeof load>>): Section[] {
@@ -36,6 +38,7 @@ function build(data: Awaited<ReturnType<typeof load>>): Section[] {
       const current = snapshot(project, data.people.filter((p) => p.project_id === project.id), data.items.filter((i) => i.project_id === project.id))
       return {
         agendaChanges: project.transport_sent ? changesSince(project.transport_sent, current) : [],
+        hotelChanges: project.hotel_sent ? hotelChanges(project.hotel_sent, hotelSnapshot(project, data.people.filter((p) => p.project_id === project.id))) : [],
         project,
         toRequest: meetings.filter((m) => m.status === 'planned'),
         awaiting: meetings.filter((m) => m.status === 'requested'),
@@ -57,6 +60,7 @@ function asText(sections: Section[], allTasks: Task[]): string {
     if (s.toRequest.length) out.push('  Meeting requests to send:', ...s.toRequest.map((m) => `    • ${m.title}`))
     if (s.awaiting.length) out.push('  Awaiting reply:', ...s.awaiting.map((m) => `    • ${m.title} (requested ${fmtShort(m.status_changed_at.slice(0, 10))})`))
     if (s.fellThrough.length) out.push('  Fell through:', ...s.fellThrough.map((m) => `    • ${m.title}`))
+    if (s.hotelChanges.length) out.push('  Hotel needs an update:', ...s.hotelChanges.map((c) => `    • ${c}`))
     if (s.agendaChanges.length) out.push('  Agenda USA needs an update:', ...s.agendaChanges.map((c) => `    • ${c}`))
     if (s.tasks.length) out.push('  Due this week / overdue:', ...s.tasks.map((t) => `    • ${t.task.title} (${fmtShort(t.due)})`))
     out.push('')
@@ -92,6 +96,9 @@ export default function Monday() {
           </div>
         </div>
         <div className="row no-print">
+          <Link className="btn small" to="/logistics">
+            Logistics board
+          </Link>
           <CopyButton text={asText(sections, data.tasks)} label="Copy as text" />
           <button className="btn" onClick={() => window.print()}>
             Print
@@ -119,13 +126,14 @@ export default function Monday() {
               s.awaiting.map((m) => `${m.title} (requested ${fmtShort(m.status_changed_at.slice(0, 10))})`),
             )}
             {list('Fell through', s.fellThrough.map((m) => m.title), 'warn')}
+            {list('Hotel needs an update', s.hotelChanges, 'warn')}
             {list('Agenda USA needs an update', s.agendaChanges, 'warn')}
             {list(
               'Due this week / overdue',
               s.tasks.map((t) => `${t.task.title} — ${t.due < now ? 'overdue, ' : ''}${fmtWeekdayShort(t.due)}`),
             )}
           </div>
-          {!s.toRequest.length && !s.awaiting.length && !s.fellThrough.length && !s.tasks.length && !s.agendaChanges.length && <p className="muted small">Nothing to discuss this week.</p>}
+          {!s.toRequest.length && !s.awaiting.length && !s.fellThrough.length && !s.tasks.length && !s.agendaChanges.length && !s.hotelChanges.length && <p className="muted small">Nothing to discuss this week.</p>}
         </section>
       ))}
     </div>

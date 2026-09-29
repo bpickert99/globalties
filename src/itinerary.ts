@@ -121,8 +121,8 @@ function contactsPage({ project, staff, settings }: ItineraryInput): Paragraph[]
   if (settings.transport_block) {
     out.push(para('Local Transportation:', { bold: true }), ...lines(settings.transport_block.split('\n')), para(''))
   }
-  if (project.driver_name) {
-    out.push(para('Driver:', { bold: true }), ...lines([project.driver_name, project.driver_phone]), para(''))
+  for (const d of project.drivers.filter((x) => x.name.trim())) {
+    out.push(para(`${d.role.trim() || 'Driver'}:`, { bold: true }), ...lines([d.name, d.phone]), para(''))
   }
   return out
 }

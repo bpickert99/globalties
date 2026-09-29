@@ -82,3 +82,12 @@ export function fmtTimeRange(start: string | null, end: string | null): string {
   if (s.meridiem === e.meridiem) return `${s.text}-${e.text} ${e.meridiem}`
   return `${s.text} ${s.meridiem}-${e.text} ${e.meridiem}`
 }
+
+// "10/1-10/6": the prefix GTKC puts on program email subjects.
+export function fmtSlashRange(startIso: string, endIso: string): string {
+  const md = (iso: string) => {
+    const d = parseDate(iso)
+    return `${d.getMonth() + 1}/${d.getDate()}`
+  }
+  return `${md(startIso)}-${md(endIso)}`
+}

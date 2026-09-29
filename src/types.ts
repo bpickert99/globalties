@@ -5,6 +5,7 @@ export type Requires = 'none' | 'home_hospitality' | 'event'
 export type EmailKey =
   | 'hotel_request'
   | 'hotel_npa_connect'
+  | 'hotel_final'
   | 'transport_request'
   | 'transport_calendar'
   | 'hh_host_details'
@@ -74,12 +75,16 @@ export type Project = {
   hotel_contact_email: string
   hotel_rate: string
   hotel_blurb: string
-  driver_name: string
-  driver_phone: string
+  drivers: Driver[]
+  vehicle_notes: string
   luggage_count: number | null
   transport_sent: TransportSnapshot | null
   transport_sent_at: string | null
-  transport_log: TransportLogEntry[]
+  hotel_sent: HotelSnapshot | null
+  hotel_sent_at: string | null
+  hotel_eta: string | null
+  hotel_checkout: string
+  vendor_log: VendorLogEntry[]
   home_hospitality: boolean
   has_event: boolean
   notes: string
@@ -186,4 +191,12 @@ export type Resource = {
 // What Agenda USA was last told, to detect changes that still need to reach them.
 export type TransportSnapshot = { passengers: number; luggage: number | null; hotel: string; days: Record<string, string> }
 
-export type TransportLogEntry = { date: string; note: string }
+// What the hotel was last sent: rooming list names are "Family, Given".
+export type HotelSnapshot = { rooms: number; names: string[]; arrival: string; departure: string }
+
+export type Driver = { role: string; name: string; phone: string }
+
+export type Vendor = 'hotel' | 'agenda'
+
+// Calls and emails with the hotel or Agenda USA.
+export type VendorLogEntry = { date: string; party: Vendor; note: string }

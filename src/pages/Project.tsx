@@ -3,6 +3,7 @@ import { fmtRange } from '../dates'
 import { canClose, progress, stage } from '../logic'
 import Checklist from '../project/Checklist'
 import Emails from '../project/Emails'
+import Hotel from '../project/Hotel'
 import Overview from '../project/Overview'
 import Participants from '../project/Participants'
 import Schedule from '../project/Schedule'
@@ -77,6 +78,7 @@ export default function ProjectPage() {
     ['checklist', `Checklist (${prog.done}/${prog.total})`],
     ['participants', 'Participants'],
     ['schedule', 'Schedule'],
+    ['hotel', 'Hotel'],
     ['transportation', 'Transportation'],
     ['emails', 'Emails'],
   ]
@@ -126,6 +128,7 @@ export default function ProjectPage() {
         <Route path="checklist" element={<Checklist data={data} reload={reload} />} />
         <Route path="participants" element={<Participants data={data} reload={reload} />} />
         <Route path="schedule" element={<Schedule data={data} reload={reload} />} />
+        <Route path="hotel" element={<Hotel data={data} reload={reload} />} />
         <Route path="transportation" element={<Transportation data={data} reload={reload} />} />
         <Route path="emails" element={<Emails data={data} reload={reload} />} />
         <Route path="*" element={<Navigate to="overview" replace />} />

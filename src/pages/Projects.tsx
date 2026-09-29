@@ -31,6 +31,9 @@ export default function Projects() {
           <label className="toggle">
             <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> Show closed
           </label>
+          <Link className="btn" to="/logistics">
+            Logistics board
+          </Link>
           <button className="btn primary" onClick={() => setCreating(true)}>
             + New project
           </button>

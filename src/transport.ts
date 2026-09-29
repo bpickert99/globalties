@@ -1,6 +1,6 @@
 // Agenda USA coordination: passengers, luggage, and the day-by-day "overarching calendar".
 
-import { dayRange, fmtTimeRange, parseDate } from './dates'
+import { dayRange, fmtSlashRange, fmtTimeRange, parseDate } from './dates'
 import { activePeople, sortItems } from './logic'
 import type { Participant, Project, ScheduleItem, TransportSnapshot } from './types'
 
@@ -50,11 +50,7 @@ export function changesSince(sent: TransportSnapshot, now: TransportSnapshot): s
 
 // "10/1-10/6: Youth in the Political Process", the subject Agenda files programs under.
 export function agendaSubject(project: Project): string {
-  const md = (iso: string) => {
-    const d = parseDate(iso)
-    return `${d.getMonth() + 1}/${d.getDate()}`
-  }
-  return `${md(project.arrival_date)}-${md(project.departure_date)}: ${project.name}`
+  return `${fmtSlashRange(project.arrival_date, project.departure_date)}: ${project.name}`
 }
 
 export function calendarText(days: CalendarDay[]): string {

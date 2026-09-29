@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import Login, { NewPassword } from './pages/Login'
+import Logistics from './pages/Logistics'
 import Monday from './pages/Monday'
 import ProjectPage from './pages/Project'
 import Projects from './pages/Projects'
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id/*" element={<ProjectPage />} />
           <Route path="/resources" element={<Resources />} />
+          <Route path="/logistics" element={<Logistics />} />
           <Route path="/monday" element={<Monday />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/todo" replace />} />

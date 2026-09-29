@@ -1,11 +1,12 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { fmtShort, fmtWeekdayShort, parseDate, today } from '../dates'
 import { activePeople, taskApplies, taskDue } from '../logic'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
 import { BAGS_PER_PERSON, calendar, calendarHtml, calendarText, changesSince, passengers, snapshot } from '../transport'
-import type { Project, Task, TransportLogEntry } from '../types'
+import type { Driver, Project, Task } from '../types'
+import VendorLog from '../VendorLog'
 import { act, CopyRichButton, Field } from '../ui'
 
 // Everything about Agenda USA for one project: the steps, what they've been told, and calls.
@@ -67,7 +68,7 @@ export default function Transportation({ data, reload }: TabProps) {
         })}
       </section>
 
-      <TripDetails key={`${project.luggage_count}|${project.driver_name}|${project.driver_phone}`} project={project} pax={pax} onSave={update}>
+      <TripDetails key={`${project.luggage_count}|${JSON.stringify(project.drivers)}|${project.vehicle_notes}`} project={project} pax={pax} onSave={update}>
         <span className="muted small">
           {byRole('participant')} participants · {byRole('interpreter')} interpreters · {byRole('liaison')} liaisons. From the Participants tab; cancellations are left out.
         </span>
@@ -129,24 +130,34 @@ export default function Transportation({ data, reload }: TabProps) {
         </div>
       </section>
 
-      <CallLog log={project.transport_log} onChange={(transport_log) => update({ transport_log })} />
+      <VendorLog
+        party="agenda"
+        log={project.vendor_log}
+        hint="Bruce prefers the phone. Log what was agreed (driver, vehicles, changes) so it isn't only in someone's inbox or head."
+        placeholder="e.g. Bruce: Carl Perico all week (913-850-2299); luggage vehicle on arrival and departure"
+        onChange={(vendor_log) => update({ vendor_log })}
+      />
     </div>
   )
 }
 
 function TripDetails({ project, pax, onSave, children }: { project: Project; pax: number; onSave: (p: Partial<Project>) => Promise<void>; children: ReactNode }) {
   const [luggage, setLuggage] = useState(project.luggage_count === null ? '' : String(project.luggage_count))
-  const [driverName, setDriverName] = useState(project.driver_name)
-  const [driverPhone, setDriverPhone] = useState(project.driver_phone)
+  const [drivers, setDrivers] = useState<Driver[]>(project.drivers)
+  const [vehicleNotes, setVehicleNotes] = useState(project.vehicle_notes)
   const suggested = pax * BAGS_PER_PERSON
-  const dirty = luggage !== (project.luggage_count === null ? '' : String(project.luggage_count)) || driverName !== project.driver_name || driverPhone !== project.driver_phone
+  const dirty =
+    luggage !== (project.luggage_count === null ? '' : String(project.luggage_count)) ||
+    JSON.stringify(drivers) !== JSON.stringify(project.drivers) ||
+    vehicleNotes !== project.vehicle_notes
+  const setDriver = (i: number, patch: Partial<Driver>) => setDrivers(drivers.map((d, j) => (j === i ? { ...d, ...patch } : d)))
 
   return (
     <form
       className="card form"
       onSubmit={(e) => {
         e.preventDefault()
-        void onSave({ luggage_count: luggage === '' ? null : Number(luggage), driver_name: driverName, driver_phone: driverPhone })
+        void onSave({ luggage_count: luggage === '' ? null : Number(luggage), drivers, vehicle_notes: vehicleNotes })
       }}
     >
       <h2>Trip details</h2>
@@ -167,52 +178,31 @@ function TripDetails({ project, pax, onSave, children }: { project: Project; pax
         <Field label="Hotel">
           <input value={project.hotel_name} readOnly placeholder="Set on the Overview tab" />
         </Field>
-        <Field label="Driver name">
-          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} />
-        </Field>
-        <Field label="Driver phone">
-          <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} />
-        </Field>
       </div>
       {children}
-      <p className="muted small">About {BAGS_PER_PERSON} bags per person. The driver prints under Local Transportation on the itinerary.</p>
+      <p className="muted small">About {BAGS_PER_PERSON} bags per person; ask the liaisons if the group is packing heavy.</p>
+      <div className="field wide">
+        <span>Agenda drivers (printed under Local Transportation on the itinerary)</span>
+        {drivers.map((d, i) => (
+          <div key={i} className="contact-row driver-row">
+            <input placeholder="Role, e.g. All week / Airport Driver" value={d.role} onChange={(e) => setDriver(i, { role: e.target.value })} />
+            <input placeholder="Name" value={d.name} onChange={(e) => setDriver(i, { name: e.target.value })} />
+            <input placeholder="Phone" value={d.phone} onChange={(e) => setDriver(i, { phone: e.target.value })} />
+            <button type="button" className="btn small ghost" onClick={() => setDrivers(drivers.filter((_, j) => j !== i))} aria-label="Remove driver">
+              ✕
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn small ghost" onClick={() => setDrivers([...drivers, { role: '', name: '', phone: '' }])}>
+          + Add driver
+        </button>
+      </div>
+      <Field label="Vehicle notes (internal)" wide>
+        <input value={vehicleNotes} placeholder="e.g. Luggage vehicle on arrival and departure" onChange={(e) => setVehicleNotes(e.target.value)} />
+      </Field>
       <button className="btn primary" disabled={!dirty}>
         Save
       </button>
     </form>
-  )
-}
-
-function CallLog({ log, onChange }: { log: TransportLogEntry[]; onChange: (log: TransportLogEntry[]) => Promise<void> }) {
-  const [date, setDate] = useState(today())
-  const [note, setNote] = useState('')
-  const sorted = [...log].sort((a, b) => b.date.localeCompare(a.date))
-
-  async function add(e: FormEvent) {
-    e.preventDefault()
-    if (!note.trim()) return
-    await onChange([...log, { date, note: note.trim() }])
-    setNote('')
-  }
-
-  return (
-    <section className="card form">
-      <h2>Calls & notes with Agenda</h2>
-      <p className="muted small">Bruce prefers the phone. Log what was agreed so it isn't only in someone's head.</p>
-      <form className="add-task call-form" onSubmit={add}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" />
-        <input placeholder="e.g. Called Bruce: van for 23 + luggage trailer confirmed; driver TBD" value={note} onChange={(e) => setNote(e.target.value)} />
-        <button className="btn primary">Add</button>
-      </form>
-      {sorted.map((entry) => (
-        <div key={`${entry.date}|${entry.note}`} className="log-entry">
-          <span className="muted small nowrap">{fmtShort(entry.date)}</span>
-          <span>{entry.note}</span>
-          <button className="btn small ghost" onClick={() => onChange(log.filter((x) => x !== entry))} aria-label="Delete note">
-            ✕
-          </button>
-        </div>
-      ))}
-    </section>
   )
 }

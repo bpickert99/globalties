@@ -1,9 +1,10 @@
 // Email drafts from the IVLP Programmer Guide templates, filled from project data.
 // Anything the data can't supply is left as a [bracketed] placeholder to edit.
 
-import { fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
+import { fmtLong, fmtRange, fmtSlashRange, fmtTimeRange } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
 import { resourceOf, visitContacts } from './resources'
+import { arrivalFlightTime, cancelledSinceSent, hotelSnapshot } from './hotel'
 import { agendaSubject, calendar, calendarText, passengers } from './transport'
 import type { Contact, EmailKey, HostGroup, Participant, ProgramType, Project, Resource, ScheduleItem, Settings } from './types'
 
@@ -22,8 +23,9 @@ export type EmailContext = {
 export type DraftTarget = { key: EmailKey; label: string; build: () => Draft }
 
 export const EMAIL_LABELS: Record<EmailKey, string> = {
-  hotel_request: 'Request rooms from hotel',
-  hotel_npa_connect: 'Connect hotel and NPA',
+  hotel_request: 'Hotel: request rooms',
+  hotel_npa_connect: 'Hotel: connect hotel and NPA',
+  hotel_final: 'Hotel: final details before arrival',
   transport_request: 'Agenda USA: book transportation',
   transport_calendar: 'Agenda USA: calendar & driver',
   hh_host_details: 'Home hospitality host details',
@@ -37,13 +39,6 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? ''
 const emails = (contacts: Contact[]) => contacts.map((c) => c.email).filter(Boolean)
 const join = (list: string[]) => list.filter(Boolean).join('; ')
 
-// Whichever NPA team member the project names as billing contact.
-function billingContact(project: Project): string {
-  const c = project.billing_contact === 'manager' ? project.npa_manager : project.npa_associate
-  if (!c.name.trim()) return '[Billing contact: name, position, organization, email, phone]'
-  return [c.name, c.title, project.npa_org, project.npa_address.replace(/\n/g, ', '), c.phone, c.email].filter(Boolean).join(', ')
-}
-
 // Billing block laid out on separate lines, as Agenda receives it.
 function billingBlock(project: Project): string {
   const c = project.billing_contact === 'manager' ? project.npa_manager : project.npa_associate
@@ -56,6 +51,9 @@ function programLabel({ project, programType }: EmailContext): string {
   return [programType.name.split(' (')[0], project.countries, project.name].filter(Boolean).join(' ')
 }
 
+// Every active person gets a room.
+const rooms = (people: Participant[]) => activePeople(people).length
+
 function luggage(project: Project): string {
   return project.luggage_count === null ? '[approx. number of bags]' : `Approx. ${project.luggage_count} bags`
 }
@@ -64,40 +62,77 @@ function dates(project: Project): string {
   return fmtRange(project.arrival_date, project.departure_date)
 }
 
-function month(project: Project): string {
-  return parseDate(project.arrival_date).toLocaleDateString('en-US', { month: 'long' })
+// "10/1-10/6: IVLP WHA Youth in the Political Process": one thread per program.
+function programSubject(ctx: EmailContext): string {
+  return `${fmtSlashRange(ctx.project.arrival_date, ctx.project.departure_date)}: ${programLabel(ctx)}`
 }
 
-function hotelRequest({ project, people }: EmailContext): Draft {
-  const active = activePeople(people)
+// Step 1: availability. Numbers are often provisional this early.
+function hotelRequest(ctx: EmailContext): Draft {
+  const { project, people } = ctx
   return {
     to: project.hotel_contact_email,
-    cc: '',
-    subject: `Room availability: ${project.name}, ${dates(project)}`,
+    cc: ctx.settings.cc_email,
+    subject: programSubject(ctx),
     body: `Hi ${or(firstName(project.hotel_contact_name), 'name')},
 
-Hope you are doing well! I am reaching out to see if you have availability for one of our upcoming groups. Below are the details for the project:
+Hope you are doing well! Details about an upcoming program below. We are working with ${or(project.npa_org, 'NPA')} for this one. Let me know if you have availability and then I can connect you to our contacts there to figure out contract signatures and such.
 
-Program Name: ${project.name}
-Dates: ${dates(project)}
-Number of Rooms: ${active.length || '[XX]'}
-Names: ${active.length ? active.map(fullName).join(', ') : '[names if available]'}
-Billing Contact: ${billingContact(project)}
+${programLabel(ctx)}
+${dates(project)}
+Rooms: ${rooms(people) || '[XX]'}
 
-[Attach rooming list if already sent by NPA.]`,
+Billing Contact:
+${billingBlock(project)}
+
+Thank you!`,
   }
 }
 
-function hotelNpaConnect({ project, people, settings }: EmailContext): Draft {
+// Step 2: "KC Hotel Connect": hand billing to the NPA and ask for confirmation numbers.
+function hotelNpaConnect(ctx: EmailContext): Draft {
+  const { project, people, settings } = ctx
+  const npa = [project.npa_manager, project.npa_associate].filter((c) => c.name.trim())
+  const npaNames = npa.map((c) => c.name).join(' and ') || '[NPA contacts]'
   return {
-    to: join([project.hotel_contact_email, ...emails([project.npa_manager, project.npa_associate])]),
+    to: join([project.hotel_contact_email, ...emails(npa)]),
     cc: settings.cc_email,
-    subject: `Kansas City hotel: ${project.name}, ${dates(project)}`,
-    body: `Hi all,
+    subject: `KC Hotel Connect: ${programSubject(ctx)}`,
+    body: `Good morning all –
 
-Hope you are doing well! I wanted to connect all of you regarding the hotel in Kansas City for the ${project.name} group in ${month(project)}. We are confirmed for ${activePeople(people).length || '[number of]'} rooms at ${or(project.hotel_name, 'hotel name')} (${or(project.hotel_address, 'hotel address')}) at GSA rate of ${or(project.hotel_rate, '$xx')} from ${dates(project)}. ${or(project.hotel_contact_name, 'Hotel contact')} will send confirmation numbers once they receive the rooming list.
+${or(firstName(project.hotel_contact_name), 'name')}, thank you for confirming availability for ${rooms(people) || '[XX]'} rooms at ${or(project.hotel_name, 'hotel')} for the ${programLabel(ctx)}${project.hotel_rate ? ` at the GSA rate of ${project.hotel_rate}` : ''}! Cc'd you will find ${npaNames}, our partners at ${or(project.npa_org, 'NPA')} responsible for billing for this group.
 
-For future communication, please make sure to keep me and my colleague on the cc so we can all be on the same page. Thanks all!`,
+${npaNames}, can you confirm who will be signing the room block contract?
+
+${or(firstName(project.hotel_contact_name), 'name')}, rooming list attached. Once you have the contract on file, could you enter these within your system and send us the confirmation numbers?
+
+Feel free to connect on next steps for billing. Please keep my colleague ${or(settings.cc_name, 'colleague')} and I on the cc so we can be on the same page and support as needed. Thank you all!`,
+  }
+}
+
+// Step 3: final email before arrival: cancellations by name, arrival, pre-keyed rooms, checkout.
+function hotelFinal(ctx: EmailContext): Draft {
+  const { project, people, items, settings } = ctx
+  const now = hotelSnapshot(project, people)
+  const cancelled = cancelledSinceSent(project.hotel_sent, now)
+  const landing = arrivalFlightTime(project, items)
+  const eta = project.hotel_eta ? fmtTimeRange(project.hotel_eta, null) : '[TIME]'
+  const cancelText = cancelled.length
+    ? `\nWe had ${cancelled.length === 1 ? 'a participant' : `${cancelled.length} participants`} cancel and will only be needing ${now.rooms} rooms. Apologies for not noting this earlier. Could you cancel:\n\n${cancelled.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+    : ''
+  return {
+    to: project.hotel_contact_email,
+    cc: settings.cc_email,
+    subject: `KC Hotel Connect: ${programSubject(ctx)}`,
+    body: `Hi ${or(firstName(project.hotel_contact_name), 'name')},
+
+We are looking forward to welcoming this group on ${fmtLong(project.arrival_date)} to Kansas City.
+${cancelText}
+The group will be landing at ${landing ?? '[flight time]'} on ${fmtLong(project.arrival_date)} and we expect them at the hotel by ${eta}. Could you make sure their rooms are pre-keyed and ready? [I will be at the hotel to welcome them to KC.]
+
+They will be checking out by ${fmtTimeRange(project.hotel_checkout, null)} on ${fmtLong(project.departure_date)}.
+
+Let me know if you have any questions. Thanks!`,
   }
 }
 
@@ -219,6 +254,7 @@ export function draftTargets(ctx: EmailContext): DraftTarget[] {
   const targets: DraftTarget[] = [
     { key: 'hotel_request', label: EMAIL_LABELS.hotel_request, build: () => hotelRequest(ctx) },
     { key: 'hotel_npa_connect', label: EMAIL_LABELS.hotel_npa_connect, build: () => hotelNpaConnect(ctx) },
+    { key: 'hotel_final', label: EMAIL_LABELS.hotel_final, build: () => hotelFinal(ctx) },
     { key: 'transport_request', label: EMAIL_LABELS.transport_request, build: () => transportRequest(ctx) },
     { key: 'transport_calendar', label: EMAIL_LABELS.transport_calendar, build: () => transportCalendar(ctx) },
   ]

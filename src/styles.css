@@ -205,7 +205,15 @@ table.cal td { border: 1px solid var(--line); font-size: 0.85rem; min-width: 120
 table.cal td div + div { margin-top: 8px; }
 .call-form input[type='date'] { flex: none; min-width: 0; }
 .call-form input:not([type='date']) { flex: 1; min-width: 200px; }
+.driver-row { grid-template-columns: 1.3fr 1fr 1fr auto; }
 .log-entry { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid #eef1f5; }
+
+/* Logistics board */
+table.board td { min-width: 180px; }
+table.board td > div + div { margin-top: 3px; }
+.tone-ok { color: var(--ok); }
+.tone-warn { color: var(--warn); font-weight: 600; }
+.tone-todo { color: var(--danger); }
 
 /* Resources & map */
 .resources-page { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; align-items: start; }
