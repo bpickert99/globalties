@@ -8,7 +8,7 @@ export type EmailKey =
   | 'hotel_npa_connect'
   | 'hotel_final'
   | 'transport_request'
-  | 'transport_calendar'
+  | 'transport_driver'
   | 'hh_host_details'
   | 'partner_thanks'
   | 'hh_thanks'
@@ -83,8 +83,6 @@ export type Project = {
   drivers: Driver[]
   vehicle_notes: string
   luggage_count: number | null
-  transport_sent: TransportSnapshot | null
-  transport_sent_at: string | null
   hotel_sent: HotelSnapshot | null
   hotel_sent_at: string | null
   hotel_eta: string | null
@@ -199,7 +197,6 @@ export type Resource = {
 }
 
 // What Agenda USA was last told, to detect changes that still need to reach them.
-export type TransportSnapshot = { passengers: number; luggage: number | null; hotel: string; days: Record<string, string> }
 
 // What the hotel was last sent: rooming list names are "Family, Given".
 export type HotelSnapshot = { rooms: number; names: string[]; arrival: string; departure: string }

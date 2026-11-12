@@ -352,9 +352,6 @@ tr.divider td { background: var(--soft); font-weight: 600; color: var(--muted); 
 .modal-body .item-form { margin: 0; border: none; }
 
 /* Transportation */
-table.cal th { background: var(--line-soft); color: var(--text); text-align: center; white-space: normal; border: 1px solid var(--line); }
-table.cal td { border: 1px solid var(--line); font-size: 0.85rem; min-width: 120px; }
-table.cal td div + div { margin-top: 8px; }
 .call-form input[type='date'] { flex: none; min-width: 0; }
 .call-form input:not([type='date']) { flex: 1; min-width: 200px; }
 .driver-row { grid-template-columns: 1.3fr 1fr 1fr auto; }

@@ -5,7 +5,7 @@ import { fmtLong, fmtRange, fmtSlashRange, fmtTimeRange } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
 import { resourceOf, visitContacts } from './resources'
 import { arrivalFlightTime, cancelledSinceSent, hotelSnapshot } from './hotel'
-import { agendaSubject, calendar, calendarText, passengers } from './transport'
+import { agendaSubject, passengers } from './transport'
 import type { Contact, EmailKey, HostGroup, Participant, ProgramType, Project, Resource, ScheduleItem, Settings } from './types'
 
 export type Draft = { to: string; cc: string; subject: string; body: string }
@@ -27,7 +27,7 @@ export const EMAIL_LABELS: Record<EmailKey, string> = {
   hotel_npa_connect: 'Hotel: connect hotel and NPA',
   hotel_final: 'Hotel: final details before arrival',
   transport_request: 'Agenda USA: book transportation',
-  transport_calendar: 'Agenda USA: calendar & driver',
+  transport_driver: 'Agenda USA: driver',
   hh_host_details: 'Home hospitality host details',
   partner_thanks: 'Meeting partner thank-you',
   hh_thanks: 'Home hospitality host thank-you',
@@ -158,9 +158,9 @@ Let me know if you have availability and once it is added within your system. Th
   }
 }
 
-// Step 2: the day-by-day calendar and the driver question. Resend whenever it changes.
-function transportCalendar(ctx: EmailContext): Draft {
-  const { project, people, items, settings } = ctx
+// Step 2: who is driving the program.
+function transportDriver(ctx: EmailContext): Draft {
+  const { project, people, settings } = ctx
   return {
     to: settings.transport_email,
     cc: settings.cc_email,
@@ -173,9 +173,6 @@ Could you let me know the driver for this program?
 
 Passengers: ${passengers(people) || '[XX]'}
 Hotel: ${or(project.hotel_name, 'hotel')}
-Overarching Calendar:
-
-${calendarText(calendar(project, items))}
 
 Let me know if you have any questions.`,
   }
@@ -256,7 +253,7 @@ export function draftTargets(ctx: EmailContext): DraftTarget[] {
     { key: 'hotel_npa_connect', label: EMAIL_LABELS.hotel_npa_connect, build: () => hotelNpaConnect(ctx) },
     { key: 'hotel_final', label: EMAIL_LABELS.hotel_final, build: () => hotelFinal(ctx) },
     { key: 'transport_request', label: EMAIL_LABELS.transport_request, build: () => transportRequest(ctx) },
-    { key: 'transport_calendar', label: EMAIL_LABELS.transport_calendar, build: () => transportCalendar(ctx) },
+    { key: 'transport_driver', label: EMAIL_LABELS.transport_driver, build: () => transportDriver(ctx) },
   ]
   const sorted = sortItems(ctx.items)
   for (const item of sorted.filter((i) => i.kind === 'home_hospitality')) {

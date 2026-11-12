@@ -3,8 +3,8 @@ import { daysBetween, fmtRange, fmtShort, fmtWeekdayShort, today } from '../date
 import { hotelChanges, hotelSnapshot, roomingRows } from '../hotel'
 import { activePeople, taskApplies, taskDue } from '../logic'
 import { must, supabase } from '../supabase'
-import { changesSince, passengers, snapshot } from '../transport'
-import type { Participant, Project, ScheduleItem, Task } from '../types'
+import { passengers } from '../transport'
+import type { Participant, Project, Task } from '../types'
 import { Loading, useData } from '../ui'
 
 const HORIZON_DAYS = 45
@@ -14,12 +14,11 @@ async function load() {
     (p) => p.departure_date >= today() && daysBetween(today(), p.arrival_date) <= HORIZON_DAYS,
   )
   const ids = projects.map((p) => p.id)
-  const [tasks, people, items] = await Promise.all([
+  const [tasks, people] = await Promise.all([
     supabase.from('tasks').select('*').in('project_id', ids),
     supabase.from('participants').select('*').in('project_id', ids),
-    supabase.from('schedule_items').select('*').in('project_id', ids),
   ])
-  return { projects, tasks: must(tasks) as Task[], people: must(people) as Participant[], items: must(items) as ScheduleItem[] }
+  return { projects, tasks: must(tasks) as Task[], people: must(people) as Participant[] }
 }
 
 type Status = { text: string; tone: 'ok' | 'warn' | 'todo' }
@@ -61,10 +60,8 @@ export default function Logistics() {
           <tbody>
             {data.projects.map((p) => {
               const people = data.people.filter((x) => x.project_id === p.id)
-              const items = data.items.filter((x) => x.project_id === p.id)
               const tasks = data.tasks.filter((t) => t.project_id === p.id && taskApplies(t, p))
               const hotel = sentStatus(p.hotel_sent_at, p.hotel_sent ? hotelChanges(p.hotel_sent, hotelSnapshot(p, people)) : [])
-              const agenda = sentStatus(p.transport_sent_at, p.transport_sent ? changesSince(p.transport_sent, snapshot(p, people, items)) : [])
               const booked = tasks.find((t) => t.email_key === 'transport_request')?.done_at
               const missingConf = roomingRows(people).filter((r) => !r.confirmation).length
               const placed = new Set(p.host_families.flatMap((f) => f.participant_ids))
@@ -102,7 +99,6 @@ export default function Logistics() {
                     <div className="small">
                       {passengers(people)} passengers · {p.luggage_count ?? '?'} bags · {booked ? 'booked' : <span className="tone-todo">not booked</span>}
                     </div>
-                    <div className={`small tone-${agenda.tone}`}>Calendar: {agenda.text}</div>
                     <div className="small">
                       {p.drivers.filter((d) => d.name).length ? (
                         p.drivers

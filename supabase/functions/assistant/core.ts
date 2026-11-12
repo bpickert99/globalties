@@ -210,7 +210,6 @@ export function buildSnapshot(s: SnapshotInput): string {
         host_families: withGuests(p.host_families as HostGroupRow[], s.participants),
         drivers: p.drivers,
         hotel_rooming_list_last_sent: p.hotel_sent_at ?? null,
-        agenda_calendar_last_sent: p.transport_sent_at ?? null,
         vendor_log: p.vendor_log,
       },
       participants: s.participants.map((x) => pick(x, ['id', 'role', 'given_name', 'family_name', 'position', 'country', 'gender', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'notes', 'cancelled_at'])),

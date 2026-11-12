@@ -1,24 +1,20 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { fmtShort, fmtWeekdayShort, parseDate, today } from '../dates'
+import { fmtShort, fmtWeekdayShort, today } from '../dates'
 import { activePeople, taskApplies, taskDue } from '../logic'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
-import { BAGS_PER_PERSON, calendar, calendarHtml, calendarText, changesSince, passengers, snapshot } from '../transport'
+import { BAGS_PER_PERSON, passengers } from '../transport'
 import type { Driver, Project, Task } from '../types'
 import VendorLog from '../VendorLog'
-import { act, CopyRichButton, Field } from '../ui'
+import { act, Field } from '../ui'
 import { SaveStatus, useAutosave } from '../autosave'
 
-// Everything about Agenda USA for one project: the steps, what they've been told, and calls.
+// Everything about Agenda USA for one project: the steps, trip details, and calls.
 export default function Transportation({ data, reload }: TabProps) {
-  const { project, people, items, tasks } = data
+  const { project, people, tasks } = data
   const pax = passengers(people)
-  const days = calendar(project, items)
-  const current = snapshot(project, people, items)
-  const changes = project.transport_sent ? changesSince(project.transport_sent, current) : []
   const steps = tasks.filter((t) => taskApplies(t, project) && /agenda/i.test(`${t.title} ${t.details}`))
-  const calendarTask = tasks.find((t) => t.email_key === 'transport_calendar')
 
   async function update(patch: Partial<Project>) {
     await act(async () => must(await supabase.from('projects').update(patch).eq('id', project.id)))
@@ -27,15 +23,6 @@ export default function Transportation({ data, reload }: TabProps) {
 
   async function toggleTask(t: Task) {
     await act(async () => must(await supabase.from('tasks').update({ done_at: t.done_at ? null : new Date().toISOString() }).eq('id', t.id)))
-    await reload()
-  }
-
-  // Record exactly what Agenda now has, and tick off the calendar step.
-  async function markSent() {
-    await act(async () => {
-      must(await supabase.from('projects').update({ transport_sent: current, transport_sent_at: new Date().toISOString() }).eq('id', project.id))
-      if (calendarTask && !calendarTask.done_at) must(await supabase.from('tasks').update({ done_at: new Date().toISOString() }).eq('id', calendarTask.id))
-    })
     await reload()
   }
 
@@ -82,61 +69,6 @@ export default function Transportation({ data, reload }: TabProps) {
         </span>
       </TripDetails>
 
-      <section className="card">
-        <div className="row spread">
-          <h2>Overarching calendar</h2>
-          <div className="row">
-            <CopyRichButton html={calendarHtml(days)} text={calendarText(days)} label="Copy calendar table" />
-            <Link className="btn small" to="../emails?key=transport_calendar">
-              Draft email
-            </Link>
-            <button className="btn small primary" onClick={markSent}>
-              Mark as sent to Agenda
-            </button>
-          </div>
-        </div>
-        {!project.transport_sent_at && <p className="notice">Not sent to Agenda yet. Built from the Schedule tab; empty days show as Free Day.</p>}
-        {project.transport_sent_at && changes.length === 0 && (
-          <p className="notice ok">Agenda is up to date. Last sent {fmtShort(project.transport_sent_at.slice(0, 10))}.</p>
-        )}
-        {changes.length > 0 && (
-          <div className="notice warn">
-            <b>Changed since you sent it to Agenda on {fmtShort(project.transport_sent_at!.slice(0, 10))}:</b>
-            <ul>
-              {changes.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
-            Send Bruce the update (or call), then click "Mark as sent to Agenda".
-          </div>
-        )}
-        <div className="table-wrap">
-          <table className="cal">
-            <thead>
-              <tr>
-                {days.map((d) => (
-                  <th key={d.day}>
-                    {parseDate(d.day).toLocaleDateString('en-US', { weekday: 'long' })}
-                    <br />
-                    {parseDate(d.day).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {days.map((d) => (
-                  <td key={d.day}>
-                    {d.lines.map((l, i) => (
-                      <div key={i}>{l}</div>
-                    ))}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       <VendorLog
         party="agenda"
