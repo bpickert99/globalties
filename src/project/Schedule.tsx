@@ -303,6 +303,9 @@ function ItemForm({
   const kind = form.kind
   const isVisit = VISITS.includes(kind)
   const resource = data.resources.find((r) => r.id === form.resource_id)
+  // Edits to the resource's itinerary description, by resource id; saved with the item.
+  const [descriptions, setDescriptions] = useState<Record<string, string>>({})
+  const description = resource ? (descriptions[resource.id] ?? resource.description) : ''
 
   function setKind(k: ItemKind) {
     const visit = VISITS.includes(k)
@@ -328,9 +331,10 @@ function ItemForm({
     e.preventDefault()
     const statusChanged = item && item.status !== form.status
     const payload = { ...form, start_time: form.start_time || null, end_time: form.end_time || null, ...(statusChanged ? { status_changed_at: new Date().toISOString() } : {}) }
-    const ok = await act(async () =>
-      must(item ? await supabase.from('schedule_items').update(payload).eq('id', item.id) : await supabase.from('schedule_items').insert({ ...payload, project_id: data.project.id })),
-    )
+    const ok = await act(async () => {
+      must(item ? await supabase.from('schedule_items').update(payload).eq('id', item.id) : await supabase.from('schedule_items').insert({ ...payload, project_id: data.project.id }))
+      if (resource && description !== resource.description) must(await supabase.from('resources').update({ description }).eq('id', resource.id))
+    })
     if (!ok) return
     onDone()
     await reload()
@@ -364,7 +368,13 @@ function ItemForm({
   const typedMatch = data.resources.find((r) => r.name.toLowerCase() === resourceQuery.trim().toLowerCase())
 
   return (
-    <form className="item-form" onSubmit={submit}>
+    <form className="item-form" onSubmit={submit} onKeyDown={(e) => e.key === 'Escape' && onDone()}>
+      <div className="item-form-head">
+        <b>{item ? `Edit ${KIND_LABELS[kind].toLowerCase()}` : `New ${KIND_LABELS[kind].toLowerCase()}`}</b>
+        <button type="button" className="icon-btn" onClick={onDone} aria-label="Close without saving" title="Close without saving (Esc)">
+          ✕
+        </button>
+      </div>
       <div className="grid">
         <Field label="Type">
           <select value={kind} onChange={(e) => setKind(e.target.value as ItemKind)}>
@@ -456,6 +466,9 @@ function ItemForm({
               ) : (
                 <p className="muted small">No contacts saved for this resource yet. Add them with "Edit resource".</p>
               )}
+              <Field label="Description on the itinerary (part of the resource, so it's the same in every project)" wide>
+                <textarea rows={4} value={description} onChange={(e) => setDescriptions({ ...descriptions, [resource.id]: e.target.value })} />
+              </Field>
             </div>
           )}
         </div>

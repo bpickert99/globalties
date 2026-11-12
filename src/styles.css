@@ -282,6 +282,7 @@ tr.divider td { background: var(--soft); font-weight: 600; color: var(--muted); 
 .item-time { width: 130px; flex: none; font-size: 0.88rem; color: var(--muted); }
 .item-main { flex: 1; min-width: 0; }
 .item-title { font-weight: 600; }
+.item-form-head { display: flex; justify-content: space-between; align-items: center; }
 .item-form { border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-top: 10px; display: flex; flex-direction: column; gap: 12px; background: var(--soft); }
 .status { font-size: 0.82rem; padding: 4px 6px; font-weight: 600; }
 .status-planned { color: var(--muted); }
