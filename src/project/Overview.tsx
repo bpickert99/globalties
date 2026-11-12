@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { SaveStatus, useAutosave } from '../autosave'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
 import type { Contact, Lodging, Project } from '../types'
@@ -24,24 +25,15 @@ async function loadHotels(excludeId: string): Promise<Hotel[]> {
 export default function Overview({ data, reload }: TabProps) {
   const navigate = useNavigate()
   const [form, setForm] = useState<Project>(data.project)
-  const [saved, setSaved] = useState(false)
   const hotels = useData(() => loadHotels(data.project.id), [data.project.id]).data ?? []
-  const set = (patch: Partial<Project>) => {
-    setForm({ ...form, ...patch })
-    setSaved(false)
-  }
-  const dirty = JSON.stringify(form) !== JSON.stringify(data.project)
-
-  async function save(e: FormEvent) {
-    e.preventDefault()
-    const { id, created_at, closed_at, ...fields } = form
+  const set = (patch: Partial<Project>) => setForm({ ...form, ...patch })
+  const saving = useAutosave(form, async (f) => {
+    const { id, created_at, closed_at, ...fields } = f
     void created_at
     void closed_at
-    const ok = await act(async () => must(await supabase.from('projects').update(fields).eq('id', id)))
-    if (!ok) return
+    must(await supabase.from('projects').update(fields).eq('id', id))
     await reload()
-    setSaved(true)
-  }
+  })
 
   async function remove() {
     if (!confirm(`Permanently delete "${data.project.name}" with its checklist, participants and schedule? This cannot be undone.`)) return
@@ -56,13 +48,9 @@ export default function Overview({ data, reload }: TabProps) {
   )
 
   return (
-    <form className="stack" onSubmit={save}>
+    <form className="stack" onSubmit={(e) => e.preventDefault()}>
       <div className="savebar">
-        <button className="btn primary" disabled={!dirty}>
-          Save changes
-        </button>
-        {saved && !dirty && <span className="muted small">Saved ✓</span>}
-        {dirty && <span className="muted small">Unsaved changes</span>}
+        <SaveStatus state={saving} />
       </div>
 
       <section className="card form">

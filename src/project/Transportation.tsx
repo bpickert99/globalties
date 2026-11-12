@@ -8,6 +8,7 @@ import { BAGS_PER_PERSON, calendar, calendarHtml, calendarText, changesSince, pa
 import type { Driver, Project, Task } from '../types'
 import VendorLog from '../VendorLog'
 import { act, CopyRichButton, Field } from '../ui'
+import { SaveStatus, useAutosave } from '../autosave'
 
 // Everything about Agenda USA for one project: the steps, what they've been told, and calls.
 export default function Transportation({ data, reload }: TabProps) {
@@ -68,7 +69,14 @@ export default function Transportation({ data, reload }: TabProps) {
         })}
       </section>
 
-      <TripDetails key={`${project.luggage_count}|${JSON.stringify(project.drivers)}|${project.vehicle_notes}`} project={project} pax={pax} onSave={update}>
+      <TripDetails
+        project={project}
+        pax={pax}
+        onSave={async (patch) => {
+          must(await supabase.from('projects').update(patch).eq('id', project.id))
+          await reload()
+        }}
+      >
         <span className="muted small">
           {byRole('participant')} participants · {byRole('interpreter')} interpreters · {byRole('liaison')} liaisons. From the Participants tab; cancellations are left out.
         </span>
@@ -146,21 +154,15 @@ function TripDetails({ project, pax, onSave, children }: { project: Project; pax
   const [drivers, setDrivers] = useState<Driver[]>(project.drivers)
   const [vehicleNotes, setVehicleNotes] = useState(project.vehicle_notes)
   const suggested = pax * BAGS_PER_PERSON
-  const dirty =
-    luggage !== (project.luggage_count === null ? '' : String(project.luggage_count)) ||
-    JSON.stringify(drivers) !== JSON.stringify(project.drivers) ||
-    vehicleNotes !== project.vehicle_notes
+  const saving = useAutosave({ luggage_count: luggage === '' ? null : Number(luggage), drivers, vehicle_notes: vehicleNotes }, onSave)
   const setDriver = (i: number, patch: Partial<Driver>) => setDrivers(drivers.map((d, j) => (j === i ? { ...d, ...patch } : d)))
 
   return (
-    <form
-      className="card form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void onSave({ luggage_count: luggage === '' ? null : Number(luggage), drivers, vehicle_notes: vehicleNotes })
-      }}
-    >
-      <h2>Trip details</h2>
+    <form className="card form" onSubmit={(e) => e.preventDefault()}>
+      <div className="row spread">
+        <h2>Trip details</h2>
+        <SaveStatus state={saving} />
+      </div>
       <div className="grid">
         <Field label="Passengers">
           <input value={pax} readOnly />
@@ -200,9 +202,6 @@ function TripDetails({ project, pax, onSave, children }: { project: Project; pax
       <Field label="Vehicle notes (internal)" wide>
         <input value={vehicleNotes} placeholder="e.g. Luggage vehicle on arrival and departure" onChange={(e) => setVehicleNotes(e.target.value)} />
       </Field>
-      <button className="btn primary" disabled={!dirty}>
-        Save
-      </button>
     </form>
   )
 }

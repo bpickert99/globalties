@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { EMAIL_LABELS } from '../emails'
 import { must, supabase } from '../supabase'
 import type { Anchor, EmailKey, ProgramType, Requires, Settings, Staff, TaskTemplate } from '../types'
 import { act, Field, Loading, useData } from '../ui'
 import { REQUIRES_LABEL } from '../logic'
+import { SaveStatus, useAutosave } from '../autosave'
 
 async function load() {
   const [settings, staff, types, templates, members] = await Promise.all([
@@ -46,21 +47,22 @@ export default function SettingsPage() {
 
 function OrgSettings({ settings, onSaved }: { settings: Settings; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState(settings)
-  const dirty = JSON.stringify(form) !== JSON.stringify(settings)
+  const saving = useAutosave(form, async (f) => {
+    must(await supabase.from('settings').update(f).eq('id', true))
+    await onSaved()
+  })
   const text = (key: keyof Omit<Settings, 'id'>, label: string) => (
     <Field label={label}>
       <input value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
     </Field>
   )
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (await act(async () => must(await supabase.from('settings').update(form).eq('id', true)))) await onSaved()
-  }
-
   return (
-    <form className="card form" onSubmit={submit}>
-      <h2>Office & emails</h2>
+    <form className="card form" onSubmit={(e) => e.preventDefault()}>
+      <div className="row spread">
+        <h2>Office & emails</h2>
+        <SaveStatus state={saving} />
+      </div>
       <div className="grid">
         <Field label="Office address (itinerary)">
           <textarea rows={3} value={form.office_address} onChange={(e) => setForm({ ...form, office_address: e.target.value })} />
@@ -78,30 +80,28 @@ function OrgSettings({ settings, onSaved }: { settings: Settings; onSaved: () =>
           <input type="number" min={1} value={form.fatigue_days} onChange={(e) => setForm({ ...form, fatigue_days: Number(e.target.value) })} />
         </Field>
       </div>
-      <button className="btn primary" disabled={!dirty}>
-        Save
-      </button>
     </form>
   )
 }
 
 function StaffEditor({ staff, onSaved }: { staff: Staff[]; onSaved: () => Promise<void> }) {
   const [rows, setRows] = useState(staff)
-  const dirty = JSON.stringify(rows) !== JSON.stringify(staff)
   const set = (i: number, patch: Partial<Staff>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  // Rows are added and removed right away; edits to their fields save automatically.
+  const saving = useAutosave(rows, async (list) => {
+    for (const { id, ...fields } of list) must(await supabase.from('staff').update(fields).eq('id', id))
+    await onSaved()
+  })
 
-  async function save() {
-    const ok = await act(async () => {
-      const keep = rows.filter((r) => r.id).map((r) => r.id)
-      const removed = staff.filter((s) => !keep.includes(s.id)).map((s) => s.id)
-      if (removed.length) must(await supabase.from('staff').delete().in('id', removed))
-      for (const [i, r] of rows.entries()) {
-        const { id, ...fields } = r
-        const payload = { ...fields, sort: i }
-        must(id ? await supabase.from('staff').update(payload).eq('id', id) : await supabase.from('staff').insert(payload))
-      }
-    })
-    if (ok) await onSaved()
+  async function add() {
+    const row = must(await supabase.from('staff').insert({ name: '', sort: rows.length }).select('*').single()) as Staff
+    setRows([...rows, row])
+  }
+
+  async function remove(r: Staff) {
+    if (r.name && !confirm(`Remove ${r.name} from the itinerary staff list?`)) return
+    must(await supabase.from('staff').delete().eq('id', r.id))
+    setRows(rows.filter((x) => x.id !== r.id))
   }
 
   return (
@@ -109,7 +109,7 @@ function StaffEditor({ staff, onSaved }: { staff: Staff[]; onSaved: () => Promis
       <h2>Staff on itineraries</h2>
       <p className="muted small">Listed in this order on the itinerary contacts page. Mark who is the emergency contact.</p>
       {rows.map((r, i) => (
-        <div key={r.id || `new-${i}`} className="contact-row staff-row">
+        <div key={r.id} className="contact-row staff-row">
           <input placeholder="Name" value={r.name} onChange={(e) => set(i, { name: e.target.value })} />
           <input placeholder="Title" value={r.title} onChange={(e) => set(i, { title: e.target.value })} />
           <input placeholder="Office phone" value={r.office_phone} onChange={(e) => set(i, { office_phone: e.target.value })} />
@@ -118,22 +118,16 @@ function StaffEditor({ staff, onSaved }: { staff: Staff[]; onSaved: () => Promis
           <label className="toggle">
             <input type="checkbox" checked={r.emergency_contact} onChange={(e) => set(i, { emergency_contact: e.target.checked })} /> Emergency
           </label>
-          <button type="button" className="btn small ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label="Remove">
+          <button type="button" className="btn small ghost" onClick={() => act(() => remove(r))} aria-label="Remove">
             ✕
           </button>
         </div>
       ))}
       <div className="row">
-        <button
-          type="button"
-          className="btn small ghost"
-          onClick={() => setRows([...rows, { id: '', name: '', title: '', office_phone: '', mobile_phone: '', email: '', emergency_contact: false, sort: rows.length }])}
-        >
+        <button type="button" className="btn small ghost" onClick={() => act(add)}>
           + Add staff
         </button>
-        <button type="button" className="btn primary" disabled={!dirty} onClick={save}>
-          Save staff
-        </button>
+        <SaveStatus state={saving} />
       </div>
     </section>
   )

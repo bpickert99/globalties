@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { SaveStatus, useAutosave } from '../autosave'
 import { Link } from 'react-router-dom'
 import { fmtShort, fmtTimeRange, fmtWeekdayShort, today } from '../dates'
 import { hotelChanges, hotelSnapshot, roomingHtml, roomingRows, roomingText } from '../hotel'
@@ -80,7 +81,14 @@ export default function Hotel({ data, reload }: TabProps) {
         <div className="small">{[project.hotel_contact_name, project.hotel_contact_email].filter(Boolean).join(' · ') || 'No hotel contact yet'}</div>
       </section>
 
-      <Arrival key={`${project.hotel_eta}|${project.hotel_checkout}`} project={project} landing={landing} onSave={update} />
+      <Arrival
+        project={project}
+        landing={landing}
+        onSave={async (patch) => {
+          must(await supabase.from('projects').update(patch).eq('id', project.id))
+          await reload()
+        }}
+      />
 
       <section className="card">
         <div className="row spread">
@@ -149,16 +157,13 @@ function Arrival({ project, landing, onSave }: { project: Project; landing: stri
   const [eta, setEta] = useState(project.hotel_eta?.slice(0, 5) ?? '')
   const [checkout, setCheckout] = useState(project.hotel_checkout.slice(0, 5))
   const suggestion = suggestedEta(landing)
-  const dirty = eta !== (project.hotel_eta?.slice(0, 5) ?? '') || checkout !== project.hotel_checkout.slice(0, 5)
+  const saving = useAutosave({ hotel_eta: eta || null, hotel_checkout: checkout }, onSave)
   return (
-    <form
-      className="card form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void onSave({ hotel_eta: eta || null, hotel_checkout: checkout })
-      }}
-    >
-      <h2>Arrival & checkout</h2>
+    <form className="card form" onSubmit={(e) => e.preventDefault()}>
+      <div className="row spread">
+        <h2>Arrival & checkout</h2>
+        <SaveStatus state={saving} />
+      </div>
       <div className="grid">
         <Field label="Flight lands">
           <input value={landing ? fmtTimeRange(landing, null) : ''} readOnly placeholder="Add the arrival flight on the Schedule tab" />
@@ -177,9 +182,6 @@ function Arrival({ project, landing, onSave }: { project: Project; landing: stri
           <input type="time" value={checkout} onChange={(e) => setCheckout(e.target.value)} />
         </Field>
       </div>
-      <button className="btn primary" disabled={!dirty}>
-        Save
-      </button>
     </form>
   )
 }

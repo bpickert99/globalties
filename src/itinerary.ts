@@ -219,7 +219,7 @@ function contactsPage(input: ItineraryInput): Paragraph[] {
     }),
     ...splitLines(settings.office_address).map((l) => centered(l)),
   ]
-  for (const s of staff) {
+  for (const s of staff.filter((x) => x.name.trim())) {
     out.push(
       blank(),
       centered([s.name, s.title].filter(Boolean).join(', '), { bold: true }),
