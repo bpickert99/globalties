@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../supabase'
+import logo from '../assets/gtkc-logo.svg'
 
 type Mode = 'sign-in' | 'sign-up' | 'reset'
 
@@ -30,14 +31,7 @@ export default function Login() {
 
   return (
     <form className="login" onSubmit={submit}>
-      <div className="brand big">
-        <span className="logo" aria-hidden>
-          ◍
-        </span>
-        <span>
-          Global Ties <b>KC</b>
-        </span>
-      </div>
+      <img src={logo} alt="Global Ties KC" className="login-logo" />
       <h1>{mode === 'sign-in' ? 'Sign in' : mode === 'sign-up' ? 'Create account' : 'Reset password'}</h1>
       <label className="field">
         <span>Email</span>

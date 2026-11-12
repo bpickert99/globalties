@@ -9,6 +9,8 @@ import Resources from './pages/Resources'
 import SettingsPage from './pages/Settings'
 import Todo from './pages/Todo'
 import { must, supabase } from './supabase'
+import arrow from './assets/gtkc-arrow.svg'
+import logoWhite from './assets/gtkc-logo-white.svg'
 
 type Access = 'checking' | 'member' | 'not-member'
 
@@ -59,14 +61,10 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand">
-          <span className="logo" aria-hidden>
-            ◍
-          </span>
-          <span>
-            Global Ties <b>KC</b>
-          </span>
-        </div>
+        <Link to="/todo" className="brand" aria-label="Global Ties KC">
+          <img src={logoWhite} alt="Global Ties KC" className="logo-full" />
+          <img src={arrow} alt="" className="logo-mark" />
+        </Link>
         {inProject ? (
           <nav>
             <Link to="/projects" className="back-link">
