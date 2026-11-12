@@ -6,11 +6,13 @@ import CalendarView from './Calendar'
 import { KIND_LABELS, sortItems, STATUS_LABELS } from '../logic'
 import type { TabProps } from '../pages/Project'
 import ResourceForm from '../ResourceForm'
-import { CATEGORY_LABELS, resourceOf, visitContacts } from '../resources'
+import { locate, resourceOf } from '../resources'
 import { must, supabase } from '../supabase'
 import type { ItemKind, MeetingStatus, Project, Resource, Restaurant, ScheduleItem } from '../types'
 import { act, Field, useData } from '../ui'
 import HostGroupsEditor from './HostGroups'
+import ItineraryPreview from './ItineraryPreview'
+import { itemBlocks } from '../itineraryItem'
 
 type Draft = Omit<ScheduleItem, 'id' | 'project_id' | 'created_at' | 'status_changed_at'>
 
@@ -22,6 +24,8 @@ const blank = (day: string): Draft => ({
   title: '',
   resource_id: null,
   contact_ids: [],
+  speaker_ids: [],
+  contact_when_speaking: false,
   topic: '',
   description: '',
   restaurants: [],
@@ -38,7 +42,7 @@ type FatigueData = { visits: Visit[]; projects: Map<string, string> }
 
 async function loadVisits(): Promise<FatigueData> {
   const [visits, projects] = await Promise.all([
-    supabase.from('schedule_items').select('id, project_id, resource_id, day, title, status, contact_ids').not('resource_id', 'is', null),
+    supabase.from('schedule_items').select('id, project_id, resource_id, day, title, status, contact_ids, speaker_ids').not('resource_id', 'is', null),
     supabase.from('projects').select('id, name'),
   ])
   return { visits: must(visits) as Visit[], projects: new Map((must(projects) as { id: string; name: string }[]).map((p) => [p.id, p.name])) }
@@ -71,7 +75,8 @@ export default function Schedule({ data, reload }: TabProps) {
   const meta = (item: ScheduleItem) => {
     if (!item.resource_id) return KIND_LABELS[item.kind]
     const r = resourceOf(item, data.resources)
-    return [KIND_LABELS[item.kind], r.address.split('\n')[0], ...visitContacts(item, r).map((c) => c.name)].filter(Boolean).join(' · ')
+    const people = r.contacts.filter((c) => item.contact_ids.includes(c.id) || item.speaker_ids.includes(c.id))
+    return [KIND_LABELS[item.kind], r.address.split('\n')[0], ...people.map((c) => c.name)].filter(Boolean).join(' · ')
   }
 
   const form = (item: ScheduleItem | undefined, day: string, start?: string | null) => (
@@ -302,10 +307,11 @@ function ItemForm({
   const set = (patch: Partial<Draft>) => setForm((f) => ({ ...f, ...patch }))
   const kind = form.kind
   const isVisit = VISITS.includes(kind)
-  const resource = data.resources.find((r) => r.id === form.resource_id)
-  // Edits to the resource's itinerary description, by resource id; saved with the item.
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({})
-  const description = resource ? (descriptions[resource.id] ?? resource.description) : ''
+  const editable = data.resources.find((r) => r.id === form.resource_id)
+  // Edits to the organization's shared itinerary text, by resource id; saved with the item.
+  const [resourceEdits, setResourceEdits] = useState<Record<string, ResourceText>>({})
+  const resource = editable && { ...editable, ...resourceEdits[editable.id] }
+  const setResource = (patch: ResourceText) => editable && setResourceEdits({ ...resourceEdits, [editable.id]: { ...resourceEdits[editable.id], ...patch } })
 
   function setKind(k: ItemKind) {
     const visit = VISITS.includes(k)
@@ -313,29 +319,49 @@ function ItemForm({
       kind: k,
       status: k === 'meeting' ? (form.status ?? 'planned') : null,
       ...(k === 'pickup' ? { end_time: null } : {}),
-      ...(visit ? {} : { resource_id: null, contact_ids: [] }),
+      ...(visit ? {} : { resource_id: null, contact_ids: [], speaker_ids: [], contact_when_speaking: false }),
     })
   }
 
   // Choosing a resource fills the title (when it still matches the old resource) and its contact.
   function chooseResource(r: Resource | undefined) {
-    const prevName = resource?.name ?? ''
+    const prevName = editable?.name ?? ''
     set({
       resource_id: r?.id ?? null,
       contact_ids: r && r.contacts.length === 1 ? [r.contacts[0].id] : [],
+      speaker_ids: [],
+      contact_when_speaking: false,
       ...(r && (!form.title || form.title === prevName) ? { title: r.name } : {}),
     })
   }
+
+  const roleOf = (id: string): Role =>
+    form.contact_ids.includes(id) ? (form.speaker_ids.includes(id) ? 'both' : 'contact') : form.speaker_ids.includes(id) ? 'speaker' : ''
+  function setRole(id: string, role: Role) {
+    const without = (ids: string[]) => ids.filter((x) => x !== id)
+    set({
+      contact_ids: role === 'contact' || role === 'both' ? [...without(form.contact_ids), id] : without(form.contact_ids),
+      speaker_ids: role === 'speaker' || role === 'both' ? [...without(form.speaker_ids), id] : without(form.speaker_ids),
+    })
+  }
+  const speakingContact = form.contact_ids.some((id) => form.speaker_ids.includes(id))
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     const statusChanged = item && item.status !== form.status
     const payload = { ...form, start_time: form.start_time || null, end_time: form.end_time || null, ...(statusChanged ? { status_changed_at: new Date().toISOString() } : {}) }
+    let notice: string | null = null
     const ok = await act(async () => {
       must(item ? await supabase.from('schedule_items').update(payload).eq('id', item.id) : await supabase.from('schedule_items').insert({ ...payload, project_id: data.project.id }))
-      if (resource && description !== resource.description) must(await supabase.from('resources').update({ description }).eq('id', resource.id))
+      const edits = editable && resourceEdits[editable.id]
+      if (edits && RESOURCE_TEXT.some((k) => edits[k] !== undefined && edits[k] !== editable[k])) {
+        const pin = edits.address !== undefined && edits.address !== editable.address ? await locate(edits.address) : null
+        notice = pin?.notice ?? null
+        must(await supabase.from('resources').update({ ...edits, ...(pin ? { lat: pin.lat, lng: pin.lng } : {}) }).eq('id', editable.id))
+      }
     })
     if (!ok) return
+    if (notice) alert(notice)
     onDone()
     await reload()
   }
@@ -359,13 +385,19 @@ function ItemForm({
           await reload()
           setCreatingResource(false)
           setResourceQuery(saved.name)
-          set({ resource_id: saved.id, contact_ids: saved.contacts.length === 1 ? [saved.contacts[0].id] : [], ...(form.title ? {} : { title: saved.name }) })
+          set({ resource_id: saved.id, contact_ids: saved.contacts.length === 1 ? [saved.contacts[0].id] : [], speaker_ids: [], ...(form.title ? {} : { title: saved.name }) })
         }}
       />
     )
   }
 
   const typedMatch = data.resources.find((r) => r.name.toLowerCase() === resourceQuery.trim().toLowerCase())
+  const preview = itemBlocks(
+    { ...form, id: item?.id ?? 'new', project_id: data.project.id, created_at: '', status_changed_at: '' },
+    data.project,
+    resource ? data.resources.map((r) => (r.id === resource.id ? resource : r)) : data.resources,
+    data.people,
+  )
 
   return (
     <form className="item-form" onSubmit={submit} onKeyDown={(e) => e.key === 'Escape' && onDone()}>
@@ -375,144 +407,172 @@ function ItemForm({
           ✕
         </button>
       </div>
-      <div className="grid">
-        <Field label="Type">
-          <select value={kind} onChange={(e) => setKind(e.target.value as ItemKind)}>
-            {Object.entries(KIND_LABELS)
-              .filter(([k]) => k !== 'home_hospitality' || data.project.home_hospitality || kind === 'home_hospitality')
-              .map(([k, l]) => (
-                <option key={k} value={k}>
-                  {l}
-                </option>
-              ))}
-          </select>
-        </Field>
-        <Field label="Day">
-          <input type="date" required value={form.day} onChange={(e) => set({ day: e.target.value })} />
-        </Field>
-        {kind !== 'note' && (
-          <>
-            <Field label={kind === 'pickup' ? 'Pickup time' : kind === 'flight' ? 'Takes off' : 'Start'}>
-              <input type="time" required={kind === 'pickup' || kind === 'flight'} value={form.start_time?.slice(0, 5) ?? ''} onChange={(e) => set({ start_time: e.target.value || null })} />
+      <div className="item-form-body">
+        <div className="item-form-fields">
+          <div className="grid">
+            <Field label="Type">
+              <select value={kind} onChange={(e) => setKind(e.target.value as ItemKind)}>
+                {Object.entries(KIND_LABELS)
+                  .filter(([k]) => k !== 'home_hospitality' || data.project.home_hospitality || kind === 'home_hospitality')
+                  .map(([k, l]) => (
+                    <option key={k} value={k}>
+                      {l}
+                    </option>
+                  ))}
+              </select>
             </Field>
-            {kind !== 'pickup' && (
-              <Field label={kind === 'flight' ? 'Lands' : 'End'}>
-                <input type="time" required={kind === 'flight'} value={form.end_time?.slice(0, 5) ?? ''} onChange={(e) => set({ end_time: e.target.value || null })} />
+            <Field label="Day">
+              <input type="date" required value={form.day} onChange={(e) => set({ day: e.target.value })} />
+            </Field>
+            {kind !== 'note' && (
+              <>
+                <Field label={kind === 'pickup' ? 'Pickup time' : kind === 'flight' ? 'Takes off' : 'Start'}>
+                  <input type="time" required={kind === 'pickup' || kind === 'flight'} value={form.start_time?.slice(0, 5) ?? ''} onChange={(e) => set({ start_time: e.target.value || null })} />
+                </Field>
+                {kind !== 'pickup' && (
+                  <Field label={kind === 'flight' ? 'Lands' : 'End'}>
+                    <input type="time" required={kind === 'flight'} value={form.end_time?.slice(0, 5) ?? ''} onChange={(e) => set({ end_time: e.target.value || null })} />
+                  </Field>
+                )}
+              </>
+            )}
+            {kind === 'meeting' && (
+              <Field label="Status">
+                <select value={form.status ?? 'planned'} onChange={(e) => set({ status: e.target.value as MeetingStatus })}>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
               </Field>
             )}
-          </>
-        )}
-        {kind === 'meeting' && (
-          <Field label="Status">
-            <select value={form.status ?? 'planned'} onChange={(e) => set({ status: e.target.value as MeetingStatus })}>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-      </div>
+          </div>
 
-      {isVisit && (
-        <div className="resource-pick">
-          <Field label="Resource (organization or place)" wide>
+          <Field label={kind === 'note' ? 'Note text (italic in itinerary)' : isVisit ? 'Title on itinerary' : 'Title'} wide>
             <input
-              list="resource-names"
-              value={resourceQuery}
-              placeholder="Start typing a saved resource…"
-              onChange={(e) => {
-                setResourceQuery(e.target.value)
-                chooseResource(data.resources.find((r) => r.name.toLowerCase() === e.target.value.trim().toLowerCase()))
-              }}
+              required
+              value={form.title}
+              onChange={(e) => set({ title: e.target.value })}
+              placeholder={
+                kind === 'flight' ? 'Arrive on American Airlines #3764 from Chicago, IL' : kind === 'transport' ? 'Drop-Offs' : kind === 'pickup' ? 'Pick-Ups' : kind === 'meal' ? 'Lunch' : isVisit ? 'Workshop: Midwest Center for Nonprofit Leadership' : ''
+              }
             />
-            <datalist id="resource-names">
-              {data.resources.map((r) => (
-                <option key={r.id} value={r.name} />
-              ))}
-            </datalist>
           </Field>
-          {!typedMatch && (
-            <button type="button" className="btn small" onClick={() => setCreatingResource(true)}>
-              + Save {resourceQuery.trim() ? `"${resourceQuery.trim()}"` : 'a new resource'} to Resources
-            </button>
-          )}
-          {resource && (
-            <div className="resource-summary">
-              <div className="muted small">
-                {CATEGORY_LABELS[resource.category]}
-                {resource.address && ` · ${resource.address.replace(/\n/g, ', ')}`}
-                {resource.lat === null && ' · not on map'} ·{' '}
-                <Link to={`/resources?id=${resource.id}`} target="_blank">
-                  Edit resource
-                </Link>
-              </div>
-              {resource.contacts.length > 0 ? (
-                <div className="checks">
-                  <span className="muted small">Contacts for this visit:</span>
-                  {resource.contacts.map((c) => (
-                    <label key={c.id} className="toggle">
-                      <input
-                        type="checkbox"
-                        checked={form.contact_ids.includes(c.id)}
-                        onChange={(e) => set({ contact_ids: e.target.checked ? [...form.contact_ids, c.id] : form.contact_ids.filter((x) => x !== c.id) })}
-                      />
-                      {c.name}
-                      {c.title && <span className="muted"> ({c.title})</span>}
-                    </label>
+
+          {isVisit && (
+            <div className="resource-pick">
+              <Field label="Organization or place" wide>
+                <input
+                  list="resource-names"
+                  value={resourceQuery}
+                  placeholder="Start typing a saved resource…"
+                  onChange={(e) => {
+                    setResourceQuery(e.target.value)
+                    chooseResource(data.resources.find((r) => r.name.toLowerCase() === e.target.value.trim().toLowerCase()))
+                  }}
+                />
+                <datalist id="resource-names">
+                  {data.resources.map((r) => (
+                    <option key={r.id} value={r.name} />
                   ))}
-                </div>
-              ) : (
-                <p className="muted small">No contacts saved for this resource yet. Add them with "Edit resource".</p>
-              )}
-              <Field label="Description on the itinerary (part of the resource, so it's the same in every project)" wide>
-                <textarea rows={4} value={description} onChange={(e) => setDescriptions({ ...descriptions, [resource.id]: e.target.value })} />
+                </datalist>
               </Field>
+              {!typedMatch && (
+                <button type="button" className="btn small" onClick={() => setCreatingResource(true)}>
+                  + Save {resourceQuery.trim() ? `"${resourceQuery.trim()}"` : 'a new resource'} to Resources
+                </button>
+              )}
+              {resource && (
+                <div className="resource-summary">
+                  <div className="muted small">
+                    <span className="chip subtle">Shared</span> Location, directions and description belong to {resource.name} and print the same in every project.{' '}
+                    <Link to={`/resources?id=${resource.id}`} target="_blank">
+                      Edit contacts
+                    </Link>
+                  </div>
+                  <div className="grid">
+                    <Field label="Location: building / room">
+                      <input value={resource.location} onChange={(e) => setResource({ location: e.target.value })} />
+                    </Field>
+                    <Field label="Location: address">
+                      <textarea rows={2} value={resource.address} onChange={(e) => setResource({ address: e.target.value })} />
+                    </Field>
+                  </div>
+                  <Field label="Directions (italic)" wide>
+                    <textarea rows={2} value={resource.directions} onChange={(e) => setResource({ directions: e.target.value })} />
+                  </Field>
+                  {resource.contacts.length > 0 ? (
+                    <div className="people">
+                      <span className="muted small">People at this visit</span>
+                      {resource.contacts.map((c) => (
+                        <label key={c.id} className="person-role">
+                          <span>
+                            {c.name}
+                            {c.title && <span className="muted"> · {c.title}</span>}
+                          </span>
+                          <select value={roleOf(c.id)} onChange={(e) => setRole(c.id, e.target.value as Role)} aria-label={`Role for ${c.name}`}>
+                            <option value="">Not listed</option>
+                            <option value="contact">Point of contact</option>
+                            <option value="speaker">Speaker</option>
+                            <option value="both">Speaker and point of contact</option>
+                          </select>
+                        </label>
+                      ))}
+                      {speakingContact && (
+                        <label className="toggle">
+                          <input type="checkbox" checked={form.contact_when_speaking} onChange={(e) => set({ contact_when_speaking: e.target.checked })} /> Also list the point of contact under
+                          "Contact" (they are listed under "Speakers")
+                        </label>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="muted small">No people saved for this organization yet. Add them with "Edit contacts".</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
+
+          {isVisit && fatigue && (
+            <FatigueWarning target={{ id: item?.id, resource_id: form.resource_id, contact_ids: form.contact_ids, speaker_ids: form.speaker_ids, day: form.day }} fatigue={fatigue} data={data} />
+          )}
+
+          {isVisit && (
+            <Field label="Topic" wide>
+              <textarea rows={2} value={form.topic} onChange={(e) => set({ topic: e.target.value })} />
+            </Field>
+          )}
+          {kind !== 'note' && (
+            <Field label={kind === 'home_hospitality' ? 'Introduction' : 'Note for this visit (italic)'} wide>
+              <textarea rows={2} value={form.description} onChange={(e) => set({ description: e.target.value })} />
+            </Field>
+          )}
+          {resource && (
+            <Field label={`Description of ${resource.name} (shared)`} wide>
+              <textarea rows={4} value={resource.description} onChange={(e) => setResource({ description: e.target.value })} />
+            </Field>
+          )}
+          {kind === 'meal' && <RestaurantsEditor value={form.restaurants} onChange={(restaurants) => set({ restaurants })} />}
+          {kind === 'home_hospitality' && <HostGroupsEditor label="Host groups" unit="group" people={data.people} value={form.hh_groups} onChange={(hh_groups) => set({ hh_groups })} />}
+          <Field label="Internal notes (not in itinerary)" wide>
+            <textarea rows={2} value={form.internal_notes} onChange={(e) => set({ internal_notes: e.target.value })} />
+          </Field>
+          <div className="row">
+            <button className="btn primary" disabled={isVisit && !form.resource_id} title={isVisit && !form.resource_id ? 'Choose or save a resource first' : undefined}>
+              Save
+            </button>
+            <button type="button" className="btn ghost" onClick={onDone}>
+              Cancel
+            </button>
+            {item && (
+              <button type="button" className="btn ghost danger" onClick={remove}>
+                Delete
+              </button>
+            )}
+          </div>
         </div>
-      )}
-
-      {isVisit && fatigue && <FatigueWarning target={{ id: item?.id, resource_id: form.resource_id, contact_ids: form.contact_ids, day: form.day }} fatigue={fatigue} data={data} />}
-
-      <Field label={kind === 'note' ? 'Note text (italic in itinerary)' : isVisit ? 'Title on itinerary' : 'Title'} wide>
-        <input
-          required
-          value={form.title}
-          onChange={(e) => set({ title: e.target.value })}
-          placeholder={
-            kind === 'flight' ? 'Arrive on American Airlines #3764 from Chicago, IL' : kind === 'transport' ? 'Drop-Offs' : kind === 'pickup' ? 'Pick-Ups' : kind === 'meal' ? 'Lunch' : isVisit ? 'Workshop: Midwest Center for Nonprofit Leadership' : ''
-          }
-        />
-      </Field>
-      {isVisit && (
-        <Field label="Topic for this visit" wide>
-          <textarea rows={2} value={form.topic} onChange={(e) => set({ topic: e.target.value })} />
-        </Field>
-      )}
-      {kind === 'home_hospitality' && (
-        <Field label="Introduction" wide>
-          <textarea rows={3} value={form.description} onChange={(e) => set({ description: e.target.value })} />
-        </Field>
-      )}
-      {kind === 'meal' && <RestaurantsEditor value={form.restaurants} onChange={(restaurants) => set({ restaurants })} />}
-      {kind === 'home_hospitality' && <HostGroupsEditor label="Host groups" unit="group" people={data.people} value={form.hh_groups} onChange={(hh_groups) => set({ hh_groups })} />}
-      <Field label="Internal notes (not in itinerary)" wide>
-        <textarea rows={2} value={form.internal_notes} onChange={(e) => set({ internal_notes: e.target.value })} />
-      </Field>
-      <div className="row">
-        <button className="btn primary" disabled={isVisit && !form.resource_id} title={isVisit && !form.resource_id ? 'Choose or save a resource first' : undefined}>
-          Save
-        </button>
-        <button type="button" className="btn ghost" onClick={onDone}>
-          Cancel
-        </button>
-        {item && (
-          <button type="button" className="btn ghost danger" onClick={remove}>
-            Delete
-          </button>
-        )}
+        <ItineraryPreview blocks={preview} />
       </div>
     </form>
   )
@@ -539,6 +599,13 @@ function RestaurantsEditor({ value, onChange }: { value: Restaurant[]; onChange:
     </div>
   )
 }
+
+// A contact's part in one visit: listed under Contact, under Speakers, or both.
+type Role = '' | 'contact' | 'speaker' | 'both'
+
+// The organization's own text that prints on the itinerary and can be edited from a visit.
+const RESOURCE_TEXT = ['location', 'address', 'directions', 'description'] as const
+type ResourceText = Partial<Pick<Resource, (typeof RESOURCE_TEXT)[number]>>
 
 function endAfterHour(start: string): string {
   const [h, m] = start.split(':').map(Number)

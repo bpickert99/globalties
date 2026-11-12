@@ -12,19 +12,23 @@ export type Visit = {
   title: string
   status: string | null
   contact_ids: string[]
+  speaker_ids: string[]
 }
+
+// Everyone the group meets at a visit: the point of contact and the speakers.
+const met = (v: { contact_ids: string[]; speaker_ids: string[] }) => [...v.contact_ids, ...v.speaker_ids]
 
 export type RecentMeeting = { visit: Visit; days: number; sharedContacts: string[] }
 
 export function recentMeetings(
-  target: { id?: string; resource_id: string | null; contact_ids: string[]; day: string },
+  target: { id?: string; resource_id: string | null; contact_ids: string[]; speaker_ids: string[]; day: string },
   visits: Visit[],
   windowDays: number,
 ): RecentMeeting[] {
   if (!target.resource_id) return []
   return visits
     .filter((v) => v.id !== target.id && v.status !== 'declined')
-    .map((v) => ({ visit: v, days: daysBetween(v.day, target.day), sharedContacts: v.contact_ids.filter((c) => target.contact_ids.includes(c)) }))
+    .map((v) => ({ visit: v, days: daysBetween(v.day, target.day), sharedContacts: met(v).filter((c) => met(target).includes(c)) }))
     .filter((m) => Math.abs(m.days) <= windowDays && (m.visit.resource_id === target.resource_id || m.sharedContacts.length > 0))
     .sort((a, b) => Math.abs(a.days) - Math.abs(b.days))
 }

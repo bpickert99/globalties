@@ -165,7 +165,9 @@ export type ScheduleItem = {
   kind: ItemKind
   title: string
   resource_id: string | null
-  contact_ids: string[]
+  contact_ids: string[] // point of contact
+  speaker_ids: string[]
+  contact_when_speaking: boolean // also list a speaking point of contact under Contact
   topic: string
   description: string
   restaurants: Restaurant[]

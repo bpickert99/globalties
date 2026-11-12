@@ -33,9 +33,9 @@ export function resourceOf(item: ScheduleItem, resources: Resource[]): Resource 
   return r
 }
 
-// Contacts from the resource chosen for this particular visit.
+// Everyone the group met at this visit (point of contact and speakers), e.g. to thank them.
 export function visitContacts(item: ScheduleItem, resource: Resource): ResourceContact[] {
-  return resource.contacts.filter((c) => item.contact_ids.includes(c.id))
+  return resource.contacts.filter((c) => item.contact_ids.includes(c.id) || item.speaker_ids.includes(c.id))
 }
 
 // Unit designators ("Ste 100", "Suite 405", "Room 414", "#2", "2nd Floor") are dropped
@@ -57,4 +57,16 @@ export async function geocode(address: string): Promise<{ lat: number; lng: numb
   if (!res.ok) throw new Error(`Address lookup failed (${res.status})`)
   const [hit] = (await res.json()) as { lat: string; lon: string }[]
   return hit ? { lat: Number(hit.lat), lng: Number(hit.lon) } : null
+}
+
+// Map pin for a new or changed address, with a note for the user when it couldn't be placed.
+export async function locate(address: string): Promise<{ lat: number | null; lng: number | null; notice: string | null }> {
+  if (!address.trim()) return { lat: null, lng: null, notice: null }
+  try {
+    const hit = await geocode(address)
+    if (hit) return { ...hit, notice: null }
+    return { lat: null, lng: null, notice: `Couldn't find "${address}" on the map. Open the resource and use "Set pin on map" to place it.` }
+  } catch (err) {
+    return { lat: null, lng: null, notice: `${(err as Error).message}. The resource was saved without a map pin.` }
+  }
 }

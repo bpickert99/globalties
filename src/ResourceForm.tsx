@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { CATEGORIES, CATEGORY_LABELS, geocode } from './resources'
+import { CATEGORIES, CATEGORY_LABELS, locate } from './resources'
 import { must, supabase } from './supabase'
 import type { Resource, ResourceCategory, ResourceContact } from './types'
 import { act, ContactsEditor, Field } from './ui'
@@ -59,17 +59,9 @@ export default function ResourceForm({
     let notice: string | null = null
     const addressChanged = !resource || resource.address !== form.address
     if (addressChanged && !pinnedByHand) {
-      if (!form.address.trim()) draft = { ...form, lat: null, lng: null }
-      else {
-        try {
-          const hit = await geocode(form.address)
-          draft = { ...form, lat: hit?.lat ?? null, lng: hit?.lng ?? null }
-          if (!hit) notice = `Couldn't find "${form.address}" on the map. Open the resource and use "Set pin on map" to place it.`
-        } catch (err) {
-          draft = { ...form, lat: null, lng: null }
-          notice = `${(err as Error).message}. The resource was saved without a map pin.`
-        }
-      }
+      const pin = await locate(form.address)
+      draft = { ...form, lat: pin.lat, lng: pin.lng }
+      notice = pin.notice
     }
     let saved: Resource | undefined
     const ok = await act(async () => {

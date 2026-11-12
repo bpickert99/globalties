@@ -29,7 +29,7 @@ import {
 import logoUrl from './assets/gtkc-logo.png?inline'
 import { dayRange, fmtLong, fmtRange, parseDate } from './dates'
 import { activePeople, fullName, itineraryTime, sortItems } from './logic'
-import { resourceOf, visitContacts } from './resources'
+import { type Block, itemBlocks, ROLE_LABELS, type Seg } from './itineraryItem'
 import type { Contact, Participant, ProgramType, Project, Resource, ScheduleItem, Settings, Staff } from './types'
 
 export type ItineraryInput = {
@@ -145,11 +145,6 @@ function logo(data: ArrayBuffer): Paragraph {
   })
 }
 
-const ROLE_LABELS = {
-  interpreter: 'Interpreter',
-  liaison: 'International Visitor Liaison',
-  participant: '',
-} as const
 
 function coverPage({ project, programType, people }: ItineraryInput, logoData: ArrayBuffer): Paragraph[] {
   const active = activePeople(people)
@@ -360,95 +355,46 @@ function gridPage({ project, items }: ItineraryInput): (Paragraph | Table)[] {
 
 // ---- Day by day --------------------------------------------------------------
 
-// Organization blurbs open with the organization's name in bold, e.g. "**Nonprofit Connect** is a regional ...".
-function blurb(text: string, name: string): Paragraph {
-  const lead = [name, `The ${name}`].find((n) => n && text.startsWith(n))
-  return indentedItalic(lead ? [run(lead, { bold: true, italics: true }), run(text.slice(lead.length), { italics: true })] : [run(text, { italics: true })])
-}
+const segRuns = (segs: Seg[]): Run[] => segs.map((s) => run(s.text, { bold: s.bold, italics: s.italic }))
 
-function contactBlock(contacts: Contact[]): Paragraph[] {
-  return contacts.flatMap((c, i) => {
-    const lines = plain([c.name, c.title, c.email, c.phone])
-    const paras = i === 0 ? labelled('Contact:', lines) : lines.map((r) => p(r, { left: VALUE_TAB }))
-    return i < contacts.length - 1 ? [...paras, blank()] : paras
-  })
-}
-
-function resourceBlock(item: ScheduleItem, resource: Resource): Paragraph[] {
-  const out: Paragraph[] = []
-  const where = plain([resource.location, ...resource.address.split('\n')])
-  if (where.length) out.push(...labelled('Location:', where), blank())
-  if (resource.directions.trim()) out.push(indentedItalic([run(resource.directions, { italics: true })]), blank())
-  const contacts = visitContacts(item, resource)
-  if (contacts.length) out.push(...contactBlock(contacts), blank())
-  return out
-}
-
-function restaurantBlock(item: ScheduleItem): Paragraph[] {
-  const label = item.restaurants.length > 1 ? 'Recommendations:' : 'Recommendation:'
-  return item.restaurants.flatMap((r, i) => {
-    const lines: Run[][] = [...plain([r.name, r.address]), ...(r.description.trim() ? [[run(r.description, { italics: true })]] : [])]
-    const paras = i === 0 ? labelled(label, lines) : lines.map((x) => p(x, { left: VALUE_TAB }))
-    return [...paras, blank()]
-  })
-}
-
-function hostGroupBox(n: number, names: string[], g: ScheduleItem['hh_groups'][number]): Table {
-  const bold = { bold: true }
-  const children: Paragraph[] = [
-    ...labelled(
-      `Group ${n}:`,
-      (names.length ? names : ['']).map((x) => [run(x, bold)]),
-      bold,
-    ),
-    blank(),
-    ...labelled('Location:', plain(g.address.split('\n')), bold),
-    blank(),
-    ...labelled('Contact:', plain([g.host, g.phone, g.email]), bold),
-    ...(g.bio.trim() ? [blank(), ...splitLines(g.bio).map((l) => p([run(l, { italics: true })], { align: 'both' }))] : []),
-  ]
-  return new Table({
-    width: { size: 9350, type: WidthType.DXA },
-    columnWidths: [9350],
-    borders: BOX_BORDERS,
-    rows: [
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: 9350, type: WidthType.DXA },
-            children,
-          }),
-        ],
-      }),
-    ],
-  })
-}
-
-function homeHospitality(item: ScheduleItem, people: Participant[]): (Paragraph | Table)[] {
-  const active = activePeople(people)
-  return item.hh_groups.flatMap((g, i) => {
-    const names = active
-      .filter((x) => g.participant_ids.includes(x.id))
-      .map((x) => `${fullName(x)} (${x.role === 'participant' ? x.country : ROLE_LABELS[x.role]})`)
-    return [hostGroupBox(i + 1, names, g), blank()]
-  })
+// Word paragraphs for one block of an item (see itineraryItem.ts, shared with the preview).
+function renderBlock(b: Block): (Paragraph | Table)[] {
+  switch (b.kind) {
+    case 'head':
+      return [p([run(b.time, { bold: true }), tab({ bold: true }), run(b.title, { bold: true })], { left: VALUE_TAB, hanging: VALUE_TAB, tabAt: VALUE_TAB })]
+    case 'note':
+      return [p([run(b.text, { italics: true })])]
+    case 'field':
+      return labelled(b.label, b.lines.map(segRuns), b.boldLabel ? { bold: true } : {})
+    case 'more':
+      return b.lines.map((l) => p(segRuns(l), { left: VALUE_TAB }))
+    case 'aside':
+      return [indentedItalic(segRuns(b.segs))]
+    case 'para':
+      return b.lines.map((l) => p(segRuns(l), { align: 'both' }))
+    case 'box':
+      return [
+        new Table({
+          width: { size: 9350, type: WidthType.DXA },
+          columnWidths: [9350],
+          borders: BOX_BORDERS,
+          rows: [
+            new TableRow({
+              children: [
+                new TableCell({
+                  width: { size: 9350, type: WidthType.DXA },
+                  children: b.blocks.flatMap((x, i) => [...(renderBlock(x) as Paragraph[]), ...(i < b.blocks.length - 1 ? [blank()] : [])]),
+                }),
+              ],
+            }),
+          ],
+        }),
+      ]
+  }
 }
 
 function itemBlock(item: ScheduleItem, input: ItineraryInput): (Paragraph | Table)[] {
-  if (item.kind === 'note') return [p([run(item.title, { italics: true })]), blank()]
-  const time = itineraryTime(item, input.project)
-  const out: (Paragraph | Table)[] = [
-    p([run(time, { bold: true }), tab({ bold: true }), run(item.title, { bold: true })], { left: VALUE_TAB, hanging: VALUE_TAB, tabAt: VALUE_TAB }),
-    blank(),
-  ]
-  const resource = item.resource_id ? resourceOf(item, input.resources) : null
-  if (resource) out.push(...resourceBlock(item, resource))
-  if (item.topic.trim()) out.push(indentedItalic([run(`Topic: ${item.topic}`, { italics: true })]), blank())
-  if (item.description.trim()) out.push(...splitLines(item.description).flatMap((l) => [indentedItalic([run(l, { italics: true })]), blank()]))
-  if (resource?.description.trim()) out.push(blurb(resource.description.trim(), resource.name), blank())
-  out.push(...restaurantBlock(item))
-  if (item.kind === 'home_hospitality') out.push(...homeHospitality(item, input.people))
-  return out
+  return itemBlocks(item, input.project, input.resources, input.people).flatMap((b) => [...renderBlock(b), blank()])
 }
 
 function hotelWelcome(project: Project): Paragraph[] {
