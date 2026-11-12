@@ -1,4 +1,5 @@
 import { useState, type DragEvent } from 'react'
+import AddressField from '../AddressField'
 import GenderMark from '../GenderMark'
 import { activePeople, fullName } from '../logic'
 import type { HostGroup, Participant } from '../types'
@@ -134,7 +135,7 @@ export default function HostGroupsEditor({
                 <input value={g.host} onChange={(e) => set(i, { host: e.target.value })} />
               </Field>
               <Field label="Address">
-                <input value={g.address} onChange={(e) => set(i, { address: e.target.value })} />
+                <AddressField value={g.address} onChange={(address) => set(i, { address })} />
               </Field>
               <Field label="Phone">
                 <input value={g.phone} onChange={(e) => set(i, { phone: e.target.value })} />

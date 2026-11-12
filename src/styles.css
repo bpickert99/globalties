@@ -156,6 +156,13 @@ main.in-project { max-width: 1400px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
 .field.wide { grid-column: 1 / -1; }
 .field > input, .field > select { width: 100%; }
+.address-field { display: flex; flex-direction: column; gap: 6px; }
+.address-input { display: flex; gap: 6px; align-items: flex-start; }
+.address-input > input, .address-input > textarea { flex: 1; min-width: 0; }
+.address-matches { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line-brand); border-radius: 10px; padding: 6px; background: var(--surface); }
+.address-matches > button[role="option"] { text-align: left; background: none; border: none; border-radius: 6px; padding: 6px 8px; cursor: pointer; font: inherit; color: var(--ink); }
+.address-matches > button[role="option"]:hover { background: var(--tint); }
+.address-matches > .link { align-self: flex-start; padding: 4px 8px; }
 /* Scrolled-to elements clear the sticky header. */
 .scroll-target { scroll-margin-top: 76px; }
 .page-back { display: inline-block; margin-bottom: 10px; font-weight: 700; text-decoration: none; }

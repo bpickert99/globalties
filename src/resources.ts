@@ -49,14 +49,35 @@ export function geocodeQuery(address: string): string {
     .trim()
 }
 
-// OpenStreetMap Nominatim: one request per save, never per keystroke (usage policy).
-export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
+export type AddressMatch = { street: string; cityLine: string; lat: number; lng: number }
+
+type NominatimHit = { lat: string; lon: string; name: string; address: Record<string, string | undefined> }
+
+// "Ste 100", "Room 414" … from what was typed, kept on the street line of a looked-up address.
+const unitsOf = (typed: string) =>
+  (typed.match(/(suite|ste\.?|room|rm\.?|unit|apt\.?|#)\s*[\w-]+|\d+(st|nd|rd|th)\s+floor/gi) ?? []).map((u) => u[0].toUpperCase() + u.slice(1)).join(' ')
+
+function toMatch(hit: NominatimHit, typed: string): AddressMatch {
+  const a = hit.address
+  const street = [a.house_number && a.road ? `${a.house_number} ${a.road}` : a.road || hit.name, unitsOf(typed)].filter(Boolean).join(' ')
+  const city = a.city ?? a.town ?? a.village ?? a.hamlet ?? ''
+  const state = (a['ISO3166-2-lvl4'] ?? '').replace(/^US-/, '')
+  return { street, cityLine: `${[city, state].filter(Boolean).join(', ')} ${a.postcode ?? ''}`.trim(), lat: Number(hit.lat), lng: Number(hit.lon) }
+}
+
+// OpenStreetMap Nominatim: one request per click or save, never per keystroke (its usage policy
+// forbids search-as-you-type).
+export async function lookupAddress(typed: string, limit: number): Promise<AddressMatch[]> {
   const url = new URL('https://nominatim.openstreetmap.org/search')
-  url.search = new URLSearchParams({ q: geocodeQuery(address), format: 'jsonv2', limit: '1', countrycodes: 'us' }).toString()
+  url.search = new URLSearchParams({ q: geocodeQuery(typed), format: 'jsonv2', addressdetails: '1', limit: String(limit), countrycodes: 'us' }).toString()
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Address lookup failed (${res.status})`)
-  const [hit] = (await res.json()) as { lat: string; lon: string }[]
-  return hit ? { lat: Number(hit.lat), lng: Number(hit.lon) } : null
+  return ((await res.json()) as NominatimHit[]).map((h) => toMatch(h, typed))
+}
+
+export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
+  const [hit] = await lookupAddress(address, 1)
+  return hit ? { lat: hit.lat, lng: hit.lng } : null
 }
 
 // Map pin for a new or changed address, with a note for the user when it couldn't be placed.

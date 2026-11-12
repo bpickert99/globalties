@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import AddressField from '../AddressField'
 import { Link, useSearchParams } from 'react-router-dom'
 import { addDays, dayRange, daysBetween, fmtLong, fmtShort, fmtTimeRange } from '../dates'
 import { recentMeetings, relative, type Visit } from '../fatigue'
@@ -312,6 +313,13 @@ function ItemForm({
   const [resourceEdits, setResourceEdits] = useState<Record<string, ResourceText>>({})
   const resource = editable && { ...editable, ...resourceEdits[editable.id] }
   const setResource = (patch: ResourceText) => editable && setResourceEdits({ ...resourceEdits, [editable.id]: { ...resourceEdits[editable.id], ...patch } })
+  // A typed address is looked up on save; a looked-up match brings its pin with it.
+  const setAddress = (address: string, pin: { lat: number; lng: number } | null) => {
+    if (!editable) return
+    const { lat, lng, ...rest } = resourceEdits[editable.id] ?? {}
+    void [lat, lng]
+    setResourceEdits({ ...resourceEdits, [editable.id]: { ...rest, address, ...pin } })
+  }
 
   function setKind(k: ItemKind) {
     const visit = VISITS.includes(k)
@@ -354,8 +362,8 @@ function ItemForm({
     const ok = await act(async () => {
       must(item ? await supabase.from('schedule_items').update(payload).eq('id', item.id) : await supabase.from('schedule_items').insert({ ...payload, project_id: data.project.id }))
       const edits = editable && resourceEdits[editable.id]
-      if (edits && RESOURCE_TEXT.some((k) => edits[k] !== undefined && edits[k] !== editable[k])) {
-        const pin = edits.address !== undefined && edits.address !== editable.address ? await locate(edits.address) : null
+      if (edits && RESOURCE_EDITS.some((k) => edits[k] !== undefined && edits[k] !== editable[k])) {
+        const pin = edits.lat === undefined && edits.address !== undefined && edits.address !== editable.address ? await locate(edits.address) : null
         notice = pin?.notice ?? null
         must(await supabase.from('resources').update({ ...edits, ...(pin ? { lat: pin.lat, lng: pin.lng } : {}) }).eq('id', editable.id))
       }
@@ -496,7 +504,7 @@ function ItemForm({
                       <input value={resource.location} onChange={(e) => setResource({ location: e.target.value })} />
                     </Field>
                     <Field label="Location: address">
-                      <textarea rows={2} value={resource.address} onChange={(e) => setResource({ address: e.target.value })} />
+                      <AddressField multiline value={resource.address} onChange={(address) => setAddress(address, null)} onPick={(address, lat, lng) => setAddress(address, { lat, lng })} />
                     </Field>
                   </div>
                   <Field label="Directions (italic)" wide>
@@ -586,7 +594,7 @@ function RestaurantsEditor({ value, onChange }: { value: Restaurant[]; onChange:
       {value.map((r, i) => (
         <div key={i} className="contact-row">
           <input placeholder="Name" value={r.name} onChange={(e) => set(i, { name: e.target.value })} />
-          <input placeholder="Address" value={r.address} onChange={(e) => set(i, { address: e.target.value })} />
+          <AddressField label="Restaurant address" placeholder="Address" value={r.address} onChange={(address) => set(i, { address })} />
           <input placeholder="Description" value={r.description} onChange={(e) => set(i, { description: e.target.value })} />
           <button type="button" className="btn small ghost" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Remove restaurant">
             ✕
@@ -604,8 +612,8 @@ function RestaurantsEditor({ value, onChange }: { value: Restaurant[]; onChange:
 type Role = '' | 'contact' | 'speaker' | 'both'
 
 // The organization's own text that prints on the itinerary and can be edited from a visit.
-const RESOURCE_TEXT = ['location', 'address', 'directions', 'description'] as const
-type ResourceText = Partial<Pick<Resource, (typeof RESOURCE_TEXT)[number]>>
+const RESOURCE_EDITS = ['location', 'address', 'directions', 'description', 'lat', 'lng'] as const
+type ResourceText = Partial<Pick<Resource, (typeof RESOURCE_EDITS)[number]>>
 
 function endAfterHour(start: string): string {
   const [h, m] = start.split(':').map(Number)

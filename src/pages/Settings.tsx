@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import AddressField from '../AddressField'
 import { EMAIL_LABELS } from '../emails'
 import { must, supabase } from '../supabase'
 import type { Anchor, EmailKey, ProgramType, Requires, Settings, Staff, TaskTemplate } from '../types'
@@ -65,7 +66,7 @@ function OrgSettings({ settings, onSaved }: { settings: Settings; onSaved: () =>
       </div>
       <div className="grid">
         <Field label="Office address (itinerary)">
-          <textarea rows={3} value={form.office_address} onChange={(e) => setForm({ ...form, office_address: e.target.value })} />
+          <AddressField multiline value={form.office_address} onChange={(office_address) => setForm({ ...form, office_address })} />
         </Field>
         <Field label="Local transportation block (itinerary)">
           <textarea rows={5} value={form.transport_block} onChange={(e) => setForm({ ...form, transport_block: e.target.value })} />

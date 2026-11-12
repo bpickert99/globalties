@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import AddressField from '../AddressField'
 import { useNavigate } from 'react-router-dom'
 import { SaveStatus, useAutosave } from '../autosave'
 import type { TabProps } from '../pages/Project'
@@ -109,7 +110,7 @@ export default function Overview({ data, reload }: TabProps) {
         <h2>National Program Agency</h2>
         {text('npa_org', 'Organization', 'Meridian International Center')}
         <Field label="Mailing address (for billing)" wide>
-          <textarea rows={2} value={form.npa_address} placeholder={'1828 L Street N.W., Suite 1200\nWashington, D.C. 20036'} onChange={(e) => set({ npa_address: e.target.value })} />
+          <AddressField multiline value={form.npa_address} placeholder={'1828 L Street N.W., Suite 1200\nWashington, D.C. 20036'} onChange={(npa_address) => set({ npa_address })} />
         </Field>
         <h3>Program Manager</h3>
         <PersonFields value={form.npa_manager} onChange={(npa_manager) => set({ npa_manager })} />
@@ -155,7 +156,9 @@ export default function Overview({ data, reload }: TabProps) {
         </div>
         <div className="grid">
           {text('hotel_name', 'Hotel name')}
-          {text('hotel_address', 'Address')}
+          <Field label="Address">
+            <AddressField value={form.hotel_address} onChange={(hotel_address) => set({ hotel_address })} />
+          </Field>
           {text('hotel_phone', 'Phone')}
           {text('hotel_rate', 'GSA rate', '$150')}
           {text('hotel_contact_name', 'Hotel contact name')}

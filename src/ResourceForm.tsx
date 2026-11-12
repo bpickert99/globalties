@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import AddressField from './AddressField'
 import { CATEGORIES, CATEGORY_LABELS, locate } from './resources'
 import { must, supabase } from './supabase'
 import type { Resource, ResourceCategory, ResourceContact } from './types'
@@ -22,8 +23,9 @@ const BLANK: Draft = {
 
 const blankContact = (): ResourceContact => ({ id: crypto.randomUUID(), name: '', title: '', phone: '', email: '' })
 
-// Create or edit a resource. A changed address is looked up on save; if it can't be
-// found, the resource still saves and the pin can be placed by hand (onRequestPin).
+// Create or edit a resource. "Look up" fills the address and pin from a map match; a typed
+// address is looked up on save. If it can't be found, the resource still saves and the pin
+// can be placed by hand (onRequestPin).
 export default function ResourceForm({
   resource,
   initialName = '',
@@ -43,7 +45,8 @@ export default function ResourceForm({
     void [id, created_at]
     return rest
   })
-  const [pinnedByHand, setPinnedByHand] = useState(false)
+  // Where the pin came from in this form: a looked-up match or a click on the map.
+  const [pinnedBy, setPinnedBy] = useState<'lookup' | 'hand' | null>(null)
   const [busy, setBusy] = useState(false)
   const set = (patch: Partial<Draft>) => setForm((f) => ({ ...f, ...patch }))
   const text = (key: 'name' | 'location' | 'website', label: string, placeholder = '') => (
@@ -58,7 +61,7 @@ export default function ResourceForm({
     let draft = form
     let notice: string | null = null
     const addressChanged = !resource || resource.address !== form.address
-    if (addressChanged && !pinnedByHand) {
+    if (addressChanged && !pinnedBy) {
       const pin = await locate(form.address)
       draft = { ...form, lat: pin.lat, lng: pin.lng }
       notice = pin.notice
@@ -93,13 +96,17 @@ export default function ResourceForm({
       </div>
       <div className="grid">
         <Field label="Street address">
-          <textarea
-            rows={2}
+          <AddressField
+            multiline
             value={form.address}
             placeholder={'1703 Wyandotte St Ste 100\nKansas City, MO 64108'}
-            onChange={(e) => {
-              set({ address: e.target.value })
-              setPinnedByHand(false)
+            onChange={(address) => {
+              set({ address })
+              setPinnedBy(null)
+            }}
+            onPick={(address, lat, lng) => {
+              set({ address, lat, lng })
+              setPinnedBy('lookup')
             }}
           />
         </Field>
@@ -107,7 +114,11 @@ export default function ResourceForm({
       </div>
       <div className="row">
         <span className="muted small">
-          {form.lat !== null ? (pinnedByHand ? 'Pin placed by hand ✓' : 'On the map ✓') : 'Not on the map yet. The address is looked up when you save.'}
+          {form.lat !== null
+            ? pinnedBy === 'hand'
+              ? 'Pin placed by hand ✓'
+              : 'On the map ✓'
+            : 'Not on the map yet. Use Look up, or the address is looked up when you save.'}
         </span>
         {onRequestPin && (
           <button
@@ -116,7 +127,7 @@ export default function ResourceForm({
             onClick={() =>
               onRequestPin((lat, lng) => {
                 set({ lat, lng })
-                setPinnedByHand(true)
+                setPinnedBy('hand')
               })
             }
           >
