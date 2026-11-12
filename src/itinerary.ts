@@ -26,7 +26,7 @@ import {
   VerticalPositionRelativeFrom,
   WidthType,
 } from 'docx'
-import logoUrl from './assets/gtkc-logo.png'
+import logoUrl from './assets/gtkc-logo.png?inline'
 import { dayRange, fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
 import { resourceOf, visitContacts } from './resources'

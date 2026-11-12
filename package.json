@@ -12,6 +12,7 @@
   "dependencies": {
     "@kenjiuno/msgreader": "^1.29.0",
     "@supabase/supabase-js": "^2.117.2",
+    "buffer": "^6.0.3",
     "docx": "^9.8.1",
     "leaflet": "^1.9.4",
     "mammoth": "^1.13.0",

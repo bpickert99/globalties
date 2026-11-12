@@ -15,6 +15,7 @@ import Transportation from '../project/Transportation'
 import { must, supabase } from '../supabase'
 import type { Participant, ProgramType, Project, Resource, ScheduleItem, Settings, Staff, Task } from '../types'
 import { act, Loading, useData } from '../ui'
+import { downloadItinerary } from '../itinerary'
 
 export type ProjectData = {
   project: Project
@@ -104,7 +105,7 @@ export default function ProjectPage() {
             <button className={assistantOpen ? 'btn band-btn active' : 'btn band-btn'} onClick={() => setAssistantOpen(!assistantOpen)}>
               ✦ Assistant
             </button>
-            <button className="btn band-btn" onClick={() => act(async () => (await import('../itinerary')).downloadItinerary(data))}>
+            <button className="btn band-btn" onClick={() => act(() => downloadItinerary(data))}>
               ⬇ Itinerary
             </button>
             {project.closed_at ? (

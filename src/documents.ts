@@ -1,6 +1,8 @@
 // Project documents: stored in Supabase Storage; Word files and saved emails are also
 // turned into text so the assistant can read them. PDFs and images are read as-is.
 
+import msgreaderModule from '@kenjiuno/msgreader'
+import mammoth from 'mammoth'
 import { must, supabase } from './supabase'
 import type { ProjectDocument } from './types'
 
@@ -8,19 +10,21 @@ export const ACCEPTED = '.pdf,.docx,.txt,.eml,.msg,.md,.csv,.png,.jpg,.jpeg,.gif
 
 const MAX_BYTES = 25 * 1024 * 1024
 
+// msgreader is CommonJS with `exports.default = MsgReader`. This app is an ES module
+// ("type": "module"), so, as in Node, the default import is the whole module.exports.
+const MsgReader = (msgreaderModule as unknown as { default: typeof msgreaderModule }).default
+
 export function readsAsIs(mime: string): boolean {
   return mime === 'application/pdf' || mime.startsWith('image/')
 }
 
 async function docxText(file: File): Promise<string> {
-  const mammoth = (await import('mammoth')).default
   const { value } = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })
   return value
 }
 
 // Outlook "Save as" / drag-out .msg files.
 async function msgText(file: File): Promise<string> {
-  const MsgReader = (await import('@kenjiuno/msgreader')).default
   const data = new MsgReader(await file.arrayBuffer()).getFileData()
   const to = (data.recipients ?? []).map((r) => [r.name, r.email ?? r.smtpAddress].filter(Boolean).join(' ')).join('; ')
   return [
