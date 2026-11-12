@@ -127,6 +127,11 @@ export default function Resources() {
 
   return (
     <div>
+      {projectId && projectName.has(projectId) && (
+        <Link to={`/projects/${projectId}/schedule`} className="page-back">
+          ← Back to {projectName.get(projectId)} schedule
+        </Link>
+      )}
       <div className="page-head">
         <div>
           <h1>Resources & Map</h1>

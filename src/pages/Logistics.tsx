@@ -38,6 +38,9 @@ export default function Logistics() {
 
   return (
     <div>
+      <Link to="/projects" className="page-back">
+        ← Projects
+      </Link>
       <div className="page-head">
         <div>
           <h1>Logistics board</h1>

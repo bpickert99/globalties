@@ -57,8 +57,10 @@ export default function MapView({
   const pinKey = points.map((p) => p.id).join(',')
   useEffect(() => {
     const m = map.current!
-    if (points.length === 1) m.setView([points[0].lat, points[0].lng], 14)
-    else if (points.length > 1) m.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [30, 30], maxZoom: 14 })
+    // Framing the pins is instant: an animated zoom still running when the page is left would fire
+    // on a removed map ("Cannot read properties of undefined (reading '_leaflet_pos')").
+    if (points.length === 1) m.setView([points[0].lat, points[0].lng], 14, { animate: false })
+    else if (points.length > 1) m.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [30, 30], maxZoom: 14, animate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinKey])
 
