@@ -1,13 +1,15 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
-import { dayRange, fmtLong, fmtTimeRange } from '../dates'
+import { Link, useSearchParams } from 'react-router-dom'
+import { addDays, dayRange, daysBetween, fmtLong, fmtShort, fmtTimeRange } from '../dates'
+import { recentMeetings, relative, type Visit } from '../fatigue'
+import CalendarView from './Calendar'
 import { activePeople, fullName, KIND_LABELS, sortItems, STATUS_LABELS } from '../logic'
 import type { TabProps } from '../pages/Project'
 import ResourceForm from '../ResourceForm'
 import { CATEGORY_LABELS, resourceOf, visitContacts } from '../resources'
 import { must, supabase } from '../supabase'
-import type { HostGroup, ItemKind, MeetingStatus, Resource, Restaurant, ScheduleItem } from '../types'
-import { act, Field } from '../ui'
+import type { HostGroup, ItemKind, MeetingStatus, Project, Resource, Restaurant, ScheduleItem } from '../types'
+import { act, Field, useData } from '../ui'
 
 type Draft = Omit<ScheduleItem, 'id' | 'project_id' | 'created_at' | 'status_changed_at'>
 
@@ -31,13 +33,34 @@ const STATUSES = Object.keys(STATUS_LABELS) as MeetingStatus[]
 // Meetings and cultural activities are visits to a saved resource.
 const VISITS: ItemKind[] = ['meeting', 'activity']
 
+type FatigueData = { visits: Visit[]; projects: Map<string, string> }
+
+async function loadVisits(): Promise<FatigueData> {
+  const [visits, projects] = await Promise.all([
+    supabase.from('schedule_items').select('id, project_id, resource_id, day, title, status, contact_ids').not('resource_id', 'is', null),
+    supabase.from('projects').select('id, name'),
+  ])
+  return { visits: must(visits) as Visit[], projects: new Map((must(projects) as { id: string; name: string }[]).map((p) => [p.id, p.name])) }
+}
+
 export default function Schedule({ data, reload }: TabProps) {
   const { project } = data
-  const [editing, setEditing] = useState<{ id: string | null; day: string } | null>(null)
+  const [params, setParams] = useSearchParams()
+  const view = params.get('view') === 'calendar' ? 'calendar' : 'list'
+  const [editing, setEditing] = useState<{ id: string | null; day: string; start?: string | null } | null>(null)
+  const [copying, setCopying] = useState(false)
+  const fatigue = useData(loadVisits, [data.items])
   const items = sortItems(data.items)
   const days = dayRange(project.arrival_date, project.departure_date)
   const outside = items.filter((i) => !days.includes(i.day))
   const meetings = items.filter((i) => i.kind === 'meeting')
+  const windowDays = data.settings.fatigue_days
+  const warnings = new Set(fatigue.data ? items.filter((i) => recentMeetings(i, fatigue.data!.visits, windowDays).length > 0).map((i) => i.id) : [])
+
+  async function done() {
+    setEditing(null)
+    await fatigue.reload()
+  }
 
   async function setStatus(item: ScheduleItem, status: MeetingStatus) {
     await act(async () => must(await supabase.from('schedule_items').update({ status, status_changed_at: new Date().toISOString() }).eq('id', item.id)))
@@ -50,14 +73,25 @@ export default function Schedule({ data, reload }: TabProps) {
     return [KIND_LABELS[item.kind], r.address.split('\n')[0], ...visitContacts(item, r).map((c) => c.name)].filter(Boolean).join(' · ')
   }
 
+  const form = (item: ScheduleItem | undefined, day: string, start?: string | null) => (
+    <ItemForm key={item?.id ?? `new-${day}-${start}`} data={data} item={item} day={day} start={start} fatigue={fatigue.data} onDone={done} reload={reload} />
+  )
+
   const itemRow = (item: ScheduleItem) =>
-    editing?.id === item.id ? (
-      <ItemForm key={item.id} data={data} item={item} day={item.day} onDone={() => setEditing(null)} reload={reload} />
+    view === 'list' && editing?.id === item.id ? (
+      form(item, item.day)
     ) : (
       <div key={item.id} className={`item kind-${item.kind}`} onClick={() => setEditing({ id: item.id, day: item.day })}>
         <div className="item-time">{fmtTimeRange(item.start_time, item.end_time)}</div>
         <div className="item-main">
-          <div className="item-title">{item.title}</div>
+          <div className="item-title">
+            {warnings.has(item.id) && (
+              <span className="fatigue-badge" title="Met with a group recently">
+                ⚠ met recently
+              </span>
+            )}
+            {item.title}
+          </div>
           <div className="muted small">{meta(item)}</div>
         </div>
         {item.status && (
@@ -78,6 +112,8 @@ export default function Schedule({ data, reload }: TabProps) {
       </div>
     )
 
+  const editingItem = editing?.id ? items.find((i) => i.id === editing.id) : undefined
+
   return (
     <div className="stack">
       <div className="row spread">
@@ -88,22 +124,51 @@ export default function Schedule({ data, reload }: TabProps) {
             </span>
           ))}
         </div>
-        <Link className="btn small" to={`/resources?project=${project.id}`}>
-          View on map
-        </Link>
-      </div>
-      {days.map((day) => (
-        <section key={day} className="card day">
-          <div className="row spread">
-            <h2>{fmtLong(day)}</h2>
-            <button className="btn small" onClick={() => setEditing({ id: null, day })}>
-              + Add
+        <div className="row">
+          <div className="seg" role="group" aria-label="View">
+            <button className={view === 'list' ? 'on' : ''} onClick={() => setParams({}, { replace: true })}>
+              List
+            </button>
+            <button className={view === 'calendar' ? 'on' : ''} onClick={() => setParams({ view: 'calendar' }, { replace: true })}>
+              Calendar
             </button>
           </div>
-          {items.filter((i) => i.day === day).map(itemRow)}
-          {editing && editing.id === null && editing.day === day && <ItemForm data={data} day={day} onDone={() => setEditing(null)} reload={reload} />}
-        </section>
-      ))}
+          <button className="btn small" onClick={() => setCopying(!copying)}>
+            Copy from a past project
+          </button>
+          <Link className="btn small" to={`/resources?project=${project.id}`}>
+            View on map
+          </Link>
+        </div>
+      </div>
+      {copying && <CopyFromProject data={data} onDone={async () => (setCopying(false), await reload())} />}
+
+      {view === 'calendar' ? (
+        <>
+          <p className="muted small">Click an empty time to add a meeting, meal, transit, cultural activity or home hospitality; click an item to edit it.</p>
+          <CalendarView project={project} items={data.items} warnings={warnings} onEdit={(i) => setEditing({ id: i.id, day: i.day })} onAdd={(day, start) => setEditing({ id: null, day, start })} />
+          {editing && (
+            <div className="modal" onClick={(e) => e.target === e.currentTarget && setEditing(null)}>
+              <div className="modal-body">{form(editingItem, editing.day, editing.start)}</div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {days.map((day) => (
+            <section key={day} className="card day">
+              <div className="row spread">
+                <h2>{fmtLong(day)}</h2>
+                <button className="btn small" onClick={() => setEditing({ id: null, day })}>
+                  + Add
+                </button>
+              </div>
+              {items.filter((i) => i.day === day).map(itemRow)}
+              {editing && editing.id === null && editing.day === day && form(undefined, day)}
+            </section>
+          ))}
+        </>
+      )}
       {outside.length > 0 && (
         <section className="card day">
           <h2>Outside the program dates</h2>
@@ -115,9 +180,113 @@ export default function Schedule({ data, reload }: TabProps) {
   )
 }
 
-function ItemForm({ data, item, day, onDone, reload }: { data: TabProps['data']; item?: ScheduleItem; day: string; onDone: () => void; reload: () => Promise<void> }) {
+// Copy meetings, meals and activities from an earlier project, keeping each one's day of the
+// program (day 1, day 2...) and times. Meetings come in as "to request".
+function CopyFromProject({ data, onDone }: { data: TabProps['data']; onDone: () => Promise<void> }) {
+  const projects = useData(
+    async () => must(await supabase.from('projects').select('id, name, arrival_date, departure_date').neq('id', data.project.id).order('arrival_date', { ascending: false })) as Pick<Project, 'id' | 'name' | 'arrival_date' | 'departure_date'>[],
+    [data.project.id],
+  )
+  const [sourceId, setSourceId] = useState('')
+  const source = projects.data?.find((p) => p.id === sourceId)
+  const sourceItems = useData(async () => (sourceId ? (must(await supabase.from('schedule_items').select('*').eq('project_id', sourceId)) as ScheduleItem[]) : []), [sourceId])
+  const [chosen, setChosen] = useState<Set<string> | null>(null)
+  const list = sortItems(sourceItems.data ?? []).filter((i) => i.kind !== 'flight')
+  const picked = chosen ?? new Set(list.filter((i) => i.kind !== 'transport').map((i) => i.id))
+  const span = daysBetween(data.project.arrival_date, data.project.departure_date)
+
+  async function copy() {
+    if (!source) return
+    const rows = list
+      .filter((i) => picked.has(i.id))
+      .map((i) => {
+        const { id, project_id, created_at, status_changed_at, ...rest } = i
+        void [id, project_id, created_at, status_changed_at]
+        const offset = Math.min(daysBetween(source.arrival_date, i.day), span)
+        return {
+          ...rest,
+          project_id: data.project.id,
+          day: addDays(data.project.arrival_date, Math.max(0, offset)),
+          status: i.kind === 'meeting' ? 'planned' : null,
+          hh_groups: i.hh_groups.map((g) => ({ ...g, participant_ids: [] })),
+        }
+      })
+    if (await act(async () => must(await supabase.from('schedule_items').insert(rows)))) await onDone()
+  }
+
+  return (
+    <section className="card form">
+      <h2>Copy from a past project</h2>
+      <Field label="Project">
+        <select
+          value={sourceId}
+          onChange={(e) => {
+            setSourceId(e.target.value)
+            setChosen(null)
+          }}
+        >
+          <option value="">Choose a project…</option>
+          {projects.data?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({fmtShort(p.arrival_date)})
+            </option>
+          ))}
+        </select>
+      </Field>
+      {source && (
+        <>
+          <p className="muted small">Each item keeps its day of the program and its times. Meetings come in as "To request"; home hospitality hosts come in without guests assigned.</p>
+          <div className="copy-list">
+            {list.map((i) => {
+              const dayNo = daysBetween(source.arrival_date, i.day) + 1
+              return (
+                <label key={i.id} className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(i.id)}
+                    onChange={(e) => {
+                      const next = new Set(picked)
+                      if (e.target.checked) next.add(i.id)
+                      else next.delete(i.id)
+                      setChosen(next)
+                    }}
+                  />
+                  <span className="muted small nowrap">Day {dayNo}</span> {fmtTimeRange(i.start_time, i.end_time)} {i.title} <span className="chip subtle">{KIND_LABELS[i.kind]}</span>
+                </label>
+              )
+            })}
+            {list.length === 0 && <span className="muted">That project has no schedule yet.</span>}
+          </div>
+          <div className="row">
+            <button className="btn primary" disabled={picked.size === 0} onClick={copy}>
+              Copy {picked.size} item{picked.size === 1 ? '' : 's'}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function ItemForm({
+  data,
+  item,
+  day,
+  start,
+  fatigue,
+  onDone,
+  reload,
+}: {
+  data: TabProps['data']
+  item?: ScheduleItem
+  day: string
+  start?: string | null
+  fatigue: FatigueData | undefined
+  onDone: () => void
+  reload: () => Promise<void>
+}) {
   const [form, setForm] = useState<Draft>(() => {
-    if (!item) return blank(day)
+    if (!item) return { ...blank(day), start_time: start ?? null, end_time: start ? endAfterHour(start) : null }
     const { id, project_id, created_at, status_changed_at, ...rest } = item
     void [id, project_id, created_at, status_changed_at]
     return rest
@@ -192,11 +361,13 @@ function ItemForm({ data, item, day, onDone, reload }: { data: TabProps['data'];
       <div className="grid">
         <Field label="Type">
           <select value={kind} onChange={(e) => setKind(e.target.value as ItemKind)}>
-            {Object.entries(KIND_LABELS).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
+            {Object.entries(KIND_LABELS)
+              .filter(([k]) => k !== 'home_hospitality' || data.project.home_hospitality || kind === 'home_hospitality')
+              .map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
           </select>
         </Field>
         <Field label="Day">
@@ -280,6 +451,8 @@ function ItemForm({ data, item, day, onDone, reload }: { data: TabProps['data'];
           )}
         </div>
       )}
+
+      {isVisit && fatigue && <FatigueWarning target={{ id: item?.id, resource_id: form.resource_id, contact_ids: form.contact_ids, day: form.day }} fatigue={fatigue} data={data} />}
 
       <Field label={kind === 'note' ? 'Note text (italic in itinerary)' : isVisit ? 'Title on itinerary' : 'Title'} wide>
         <input
@@ -402,6 +575,33 @@ function HostGroupsEditor({ data, value, onChange }: { data: TabProps['data']; v
       >
         + Add host group
       </button>
+    </div>
+  )
+}
+
+function endAfterHour(start: string): string {
+  const [h, m] = start.split(':').map(Number)
+  return `${String(Math.min(h + 1, 23)).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function FatigueWarning({ target, fatigue, data }: { target: Parameters<typeof recentMeetings>[0]; fatigue: FatigueData; data: TabProps['data'] }) {
+  const windowDays = data.settings.fatigue_days
+  const recent = recentMeetings(target, fatigue.visits, windowDays)
+  if (!recent.length) return null
+  const resource = data.resources.find((r) => r.id === target.resource_id)
+  const contactName = (id: string) => resource?.contacts.find((c) => c.id === id)?.name ?? 'a contact'
+  return (
+    <div className="notice warn">
+      <b>Met recently: check this isn't asking too much of them.</b> Within {windowDays} days of this visit:
+      <ul>
+        {recent.map((m) => (
+          <li key={m.visit.id}>
+            {fatigue.projects.get(m.visit.project_id) ?? 'Another project'}: {m.visit.title} on {fmtShort(m.visit.day)} ({relative(m.days)})
+            {m.visit.resource_id !== target.resource_id && m.sharedContacts.length > 0 && ` · same person: ${m.sharedContacts.map(contactName).join(', ')}`}
+            {m.visit.status && ` · ${STATUS_LABELS[m.visit.status as MeetingStatus]}`}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

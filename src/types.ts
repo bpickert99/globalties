@@ -24,6 +24,7 @@ export type Settings = {
   cc_email: string
   ceo_email: string
   survey_url: string
+  fatigue_days: number
 }
 
 export type Staff = {
@@ -92,9 +93,12 @@ export type Project = {
   created_at: string
 }
 
+// A checklist task (project_id set) or a to-do task (list_id set), never both.
 export type Task = {
   id: string
   project_id: string | null
+  list_id: string | null
+  starred: boolean
   phase: string
   title: string
   details: string
@@ -200,3 +204,62 @@ export type Vendor = 'hotel' | 'agenda'
 
 // Calls and emails with the hotel or Agenda USA.
 export type VendorLogEntry = { date: string; party: Vendor; note: string }
+
+export type TaskList = { id: string; name: string; project_id: string | null; shown: boolean; sort: number; created_at: string }
+
+export type ProjectDocument = {
+  id: string
+  project_id: string
+  name: string
+  mime_type: string
+  size_bytes: number
+  storage_path: string
+  text_content: string | null
+  anthropic_file_id: string | null
+  created_at: string
+}
+
+export type Chat = { id: string; project_id: string; title: string; created_at: string }
+
+export type ProposalStatus = 'pending' | 'applied' | 'rejected' | 'failed'
+
+// One change the assistant proposes; applied only when the user approves it.
+export type Operation = {
+  type:
+    | 'update_project'
+    | 'add_participant'
+    | 'update_participant'
+    | 'cancel_participant'
+    | 'add_resource'
+    | 'update_resource'
+    | 'add_schedule_item'
+    | 'update_schedule_item'
+    | 'add_task'
+    | 'complete_task'
+    | 'add_log_note'
+  reason: string
+  id?: string
+  ref?: string
+  data?: Record<string, unknown>
+  status: ProposalStatus
+  error?: string
+}
+
+export type Proposal = { tool_use_id: string; summary: string; operations: Operation[] }
+
+export type ChatMessageUi = {
+  text?: string
+  attachments?: { id: string; name: string }[]
+  proposals?: Proposal[]
+  error?: string
+}
+
+export type ChatMessage = {
+  id: string
+  chat_id: string
+  seq: number
+  role: 'user' | 'assistant' | 'system'
+  api_content: unknown
+  ui: ChatMessageUi
+  created_at: string
+}

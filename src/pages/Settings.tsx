@@ -73,6 +73,9 @@ function OrgSettings({ settings, onSaved }: { settings: Settings; onSaved: () =>
         {text('cc_email', 'Colleague to cc (email)')}
         {text('ceo_email', 'President & CEO email (cc on thank-yous)')}
         {text('survey_url', 'Feedback survey link')}
+        <Field label="Meeting-fatigue warning (days)">
+          <input type="number" min={1} value={form.fatigue_days} onChange={(e) => setForm({ ...form, fatigue_days: Number(e.target.value) })} />
+        </Field>
       </div>
       <button className="btn primary" disabled={!dirty}>
         Save

@@ -10,14 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@kenjiuno/msgreader": "^1.29.0",
     "@supabase/supabase-js": "^2.117.2",
     "docx": "^9.8.1",
     "leaflet": "^1.9.4",
+    "mammoth": "^1.13.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",

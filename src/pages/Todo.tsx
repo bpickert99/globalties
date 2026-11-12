@@ -1,186 +1,262 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { addDays, fmtWeekdayShort, today } from '../dates'
-import { taskApplies, taskDue } from '../logic'
 import { must, supabase } from '../supabase'
-import type { Project, Task } from '../types'
+import type { Project, Task, TaskList } from '../types'
 import { act, Loading, useData } from '../ui'
 
-type Row = { task: Task; project: Project | undefined; due: string | null }
-type Group = { key: string; label: string; rows: Row[]; collapsed?: boolean }
-
-const MINE = 'mine'
+// Google Tasks–style lists: General, one per open project, and any made by hand.
+// Only tasks added here appear; project checklists stay on each project's Checklist tab.
 
 async function load() {
-  const projects = must(await supabase.from('projects').select('*').is('closed_at', null).order('arrival_date')) as Project[]
-  const tasks = must(await supabase.from('tasks').select('*').order('sort')) as Task[]
-  return { projects, tasks }
+  const [lists, tasks, projects] = await Promise.all([
+    supabase.from('task_lists').select('*').order('sort').order('created_at'),
+    supabase.from('tasks').select('*').not('list_id', 'is', null).order('created_at'),
+    supabase.from('projects').select('id, name, closed_at, arrival_date'),
+  ])
+  return {
+    lists: must(lists) as TaskList[],
+    tasks: must(tasks) as Task[],
+    projects: must(projects) as Pick<Project, 'id' | 'name' | 'closed_at' | 'arrival_date'>[],
+  }
 }
 
-function group(rows: Row[]): Group[] {
+type View = 'all' | 'starred'
+
+// "Past", "Today", "Tomorrow", "Wed, Nov 18", or "No deadline".
+function dateLabel(due: string | null): string {
+  if (!due) return 'No deadline'
   const now = today()
-  const weekEnd = addDays(now, 7)
-  const byDue = (a: Row, b: Row) => (a.due ?? '').localeCompare(b.due ?? '') || a.task.sort - b.task.sort
-  const open = rows.filter((r) => !r.task.done_at).sort(byDue)
-  return [
-    { key: 'overdue', label: 'Overdue', rows: open.filter((r) => r.due && r.due < now) },
-    { key: 'today', label: 'Today', rows: open.filter((r) => r.due === now) },
-    { key: 'week', label: 'Next 7 days', rows: open.filter((r) => r.due && r.due > now && r.due <= weekEnd) },
-    { key: 'later', label: 'Later', rows: open.filter((r) => r.due && r.due > weekEnd), collapsed: true },
-    { key: 'nodate', label: 'No date', rows: open.filter((r) => !r.due) },
-    {
-      key: 'done',
-      label: 'Completed',
-      rows: rows.filter((r) => r.task.done_at).sort((a, b) => b.task.done_at!.localeCompare(a.task.done_at!)),
-      collapsed: true,
-    },
-  ]
+  if (due < now) return 'Past'
+  if (due === now) return 'Today'
+  if (due === addDays(now, 1)) return 'Tomorrow'
+  return fmtWeekdayShort(due)
+}
+
+function grouped(tasks: Task[]): [string, Task[]][] {
+  const open = tasks.filter((t) => !t.done_at).sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999') || a.created_at.localeCompare(b.created_at))
+  const groups: [string, Task[]][] = []
+  for (const t of open) {
+    const label = dateLabel(t.due_date)
+    const last = groups[groups.length - 1]
+    if (last && last[0] === label) last[1].push(t)
+    else groups.push([label, [t]])
+  }
+  return groups
 }
 
 export default function Todo() {
   const { data, error, reload } = useData(load, [])
-  const [list, setList] = useState<string>('all')
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [openTask, setOpenTask] = useState<string | null>(null)
-
+  const [view, setView] = useState<View>('all')
   if (!data) return <Loading error={error} />
-  const byId = new Map(data.projects.map((p) => [p.id, p]))
-  const rows: Row[] = data.tasks
-    .filter((t) => t.project_id === null || byId.has(t.project_id))
-    .map((t) => ({ task: t, project: t.project_id ? byId.get(t.project_id) : undefined }))
-    .filter((r) => taskApplies(r.task, r.project))
-    .map((r) => ({ ...r, due: taskDue(r.task, r.project) }))
-  const visible = rows.filter((r) => list === 'all' || (list === MINE ? r.task.project_id === null : r.task.project_id === list))
-  const openCount = (pred: (r: Row) => boolean) => rows.filter((r) => !r.task.done_at && pred(r)).length
 
-  async function toggle(task: Task) {
-    await act(async () => must(await supabase.from('tasks').update({ done_at: task.done_at ? null : new Date().toISOString() }).eq('id', task.id)))
+  const closed = new Set(data.projects.filter((p) => p.closed_at).map((p) => p.id))
+  const lists = data.lists.filter((l) => !l.project_id || !closed.has(l.project_id))
+  const openCount = (l: TaskList) => data.tasks.filter((t) => t.list_id === l.id && !t.done_at).length
+
+  async function toggleShown(l: TaskList) {
+    await act(async () => must(await supabase.from('task_lists').update({ shown: !l.shown }).eq('id', l.id)))
     await reload()
   }
 
-  async function remove(task: Task) {
-    if (!confirm(`Delete "${task.title}"?`)) return
-    await act(async () => must(await supabase.from('tasks').delete().eq('id', task.id)))
+  async function createList() {
+    const name = prompt('Name of the new list:')?.trim()
+    if (!name) return
+    await act(async () => must(await supabase.from('task_lists').insert({ name, sort: 50 })))
     await reload()
   }
 
-  const lists = [
-    { id: 'all', name: 'All tasks', count: openCount(() => true) },
-    { id: MINE, name: 'My tasks', count: openCount((r) => r.task.project_id === null) },
-    ...data.projects.map((p) => ({ id: p.id, name: p.name, count: openCount((r) => r.task.project_id === p.id) })),
-  ]
+  const starred = data.tasks.filter((t) => t.starred && !t.done_at)
 
   return (
-    <div className="todo">
-      <aside className="lists">
+    <div className="gtasks">
+      <aside className="gtasks-side">
+        <button className={view === 'all' ? 'list active' : 'list'} onClick={() => setView('all')}>
+          <span>☑ All tasks</span>
+        </button>
+        <button className={view === 'starred' ? 'list active' : 'list'} onClick={() => setView('starred')}>
+          <span>☆ Starred</span>
+          <span className="count">{starred.length || ''}</span>
+        </button>
+        <div className="side-head">Lists</div>
         {lists.map((l) => (
-          <button key={l.id} className={list === l.id ? 'list active' : 'list'} onClick={() => setList(l.id)}>
-            <span>{l.name}</span>
-            <span className="count">{l.count}</span>
-          </button>
+          <label key={l.id} className="side-list">
+            <input type="checkbox" checked={l.shown} onChange={() => toggleShown(l)} />
+            <span className="side-name">{l.name}</span>
+            <span className="count">{openCount(l) || ''}</span>
+          </label>
         ))}
+        <button className="list" onClick={createList}>
+          <span>+ Create new list</span>
+        </button>
       </aside>
-      <select className="lists-mobile" value={list} onChange={(e) => setList(e.target.value)} aria-label="Task list">
-        {lists.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.name} ({l.count})
-          </option>
-        ))}
-      </select>
-      <section className="tasks">
-        <AddTask projects={data.projects} defaultList={list === 'all' ? MINE : list} onAdded={reload} />
-        {group(visible).map((g) =>
-          g.rows.length === 0 ? null : (
-            <div key={g.key} className={`group group-${g.key}`}>
-              <button className="group-head" onClick={() => setExpanded({ ...expanded, [g.key]: !(expanded[g.key] ?? !g.collapsed) })}>
-                <span>{(expanded[g.key] ?? !g.collapsed) ? '▾' : '▸'}</span> {g.label} <span className="count">{g.rows.length}</span>
-              </button>
-              {(expanded[g.key] ?? !g.collapsed) &&
-                g.rows.map((r) => (
-                  <div key={r.task.id} className={r.task.done_at ? 'task done' : 'task'}>
-                    <button className="check" onClick={() => toggle(r.task)} aria-label={r.task.done_at ? 'Mark not done' : 'Mark done'}>
-                      {r.task.done_at ? '✓' : ''}
-                    </button>
-                    <div className="task-body" onClick={() => setOpenTask(openTask === r.task.id ? null : r.task.id)}>
-                      <div className="task-title">{r.task.title}</div>
-                      <div className="task-meta">
-                        {r.project && <span className="chip">{r.project.name}</span>}
-                        {r.due && <span className={r.due < today() && !r.task.done_at ? 'due overdue' : 'due'}>{fmtWeekdayShort(r.due)}</span>}
-                      </div>
-                      {openTask === r.task.id && (
-                        <div className="task-details" onClick={(e) => e.stopPropagation()}>
-                          {r.task.phase && <div className="muted small">{r.task.phase}</div>}
-                          {r.task.details && <p>{r.task.details}</p>}
-                          <div className="row">
-                            {r.project && (
-                              <Link className="btn small" to={`/projects/${r.project.id}/checklist`}>
-                                Open project
-                              </Link>
-                            )}
-                            {r.project && r.task.email_key && (
-                              <Link className="btn small" to={`/projects/${r.project.id}/emails?key=${r.task.email_key}`}>
-                                Draft email
-                              </Link>
-                            )}
-                            {!r.project && (
-                              <button className="btn small ghost" onClick={() => remove(r.task)}>
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          ),
+      <section className="gtasks-board">
+        {view === 'starred' ? (
+          <ListCard title="Starred" tasks={starred} lists={lists} onChange={reload} />
+        ) : (
+          lists
+            .filter((l) => l.shown)
+            .map((l) => <ListCard key={l.id} list={l} title={l.name} tasks={data.tasks.filter((t) => t.list_id === l.id)} lists={lists} onChange={reload} />)
         )}
-        {visible.length === 0 && <p className="muted">Nothing here yet.</p>}
+        {view === 'all' && !lists.some((l) => l.shown) && <p className="muted">Tick a list on the left to show it.</p>}
       </section>
     </div>
   )
 }
 
-function AddTask({ projects, defaultList, onAdded }: { projects: Project[]; defaultList: string; onAdded: () => Promise<void> }) {
-  const [title, setTitle] = useState('')
-  const [due, setDue] = useState('')
-  const [target, setTarget] = useState<string | null>(null)
-  const listId = target ?? defaultList
+function ListCard({ list, title, tasks, lists, onChange }: { list?: TaskList; title: string; tasks: Task[]; lists: TaskList[]; onChange: () => Promise<void> }) {
+  const [adding, setAdding] = useState(false)
+  const [showDone, setShowDone] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const done = tasks.filter((t) => t.done_at).sort((a, b) => b.done_at!.localeCompare(a.done_at!))
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!title.trim()) return
-    const ok = await act(async () =>
-      must(
-        await supabase.from('tasks').insert({
-          title: title.trim(),
-          due_date: due || null,
-          project_id: listId === MINE ? null : listId,
-          phase: listId === MINE ? '' : 'Other',
-          sort: 1000,
-        }),
-      ),
-    )
-    if (!ok) return
-    setTitle('')
-    setDue('')
-    await onAdded()
+  async function rename() {
+    if (!list) return
+    const name = prompt('Rename list:', list.name)?.trim()
+    if (!name) return
+    await act(async () => must(await supabase.from('task_lists').update({ name }).eq('id', list.id)))
+    await onChange()
+  }
+
+  async function remove() {
+    if (!list || !confirm(`Delete the list "${list.name}" and its ${tasks.length} task(s)?`)) return
+    await act(async () => must(await supabase.from('task_lists').delete().eq('id', list.id)))
+    await onChange()
   }
 
   return (
-    <form className="add-task" onSubmit={submit}>
-      <input placeholder="+ Add a task" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <input type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
-      <select value={listId} onChange={(e) => setTarget(e.target.value)} aria-label="List">
-        <option value={MINE}>My tasks</option>
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-      <button className="btn primary">Add</button>
+    <div className="gcard">
+      <div className="gcard-head">
+        <h2>{title}</h2>
+        {list && (
+          <div className="menu-wrap">
+            <button className="icon-btn" onClick={() => setMenu(!menu)} aria-label="List options">
+              ⋮
+            </button>
+            {menu && (
+              <div className="menu" onMouseLeave={() => setMenu(false)}>
+                {list.project_id ? (
+                  <Link to={`/projects/${list.project_id}`}>Open project</Link>
+                ) : (
+                  <>
+                    <button onClick={rename}>Rename list</button>
+                    <button className="danger" onClick={remove}>
+                      Delete list
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {list && (adding ? <TaskEditor listId={list.id} lists={lists} onDone={() => setAdding(false)} onSaved={onChange} /> : (
+        <button className="add-link" onClick={() => setAdding(true)}>
+          ⊕ Add a task
+        </button>
+      ))}
+      {grouped(tasks).map(([label, group]) => (
+        <div key={label} className="ggroup">
+          <div className={label === 'Past' ? 'ggroup-label overdue' : label === 'Today' ? 'ggroup-label today' : 'ggroup-label'}>{label}</div>
+          {group.map((t) => (
+            <TaskRow key={t.id} task={t} lists={lists} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+      {tasks.filter((t) => !t.done_at).length === 0 && !adding && <p className="muted small pad-s">No tasks</p>}
+      {done.length > 0 && (
+        <>
+          <button className="done-toggle" onClick={() => setShowDone(!showDone)}>
+            {showDone ? '▾' : '▸'} Completed ({done.length})
+          </button>
+          {showDone && done.map((t) => <TaskRow key={t.id} task={t} lists={lists} onChange={onChange} />)}
+        </>
+      )}
+    </div>
+  )
+}
+
+function TaskRow({ task, lists, onChange }: { task: Task; lists: TaskList[]; onChange: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
+
+  async function update(patch: Partial<Task>) {
+    await act(async () => must(await supabase.from('tasks').update(patch).eq('id', task.id)))
+    await onChange()
+  }
+
+  if (editing) return <TaskEditor task={task} listId={task.list_id!} lists={lists} onDone={() => setEditing(false)} onSaved={onChange} />
+
+  return (
+    <div className={task.done_at ? 'gtask done' : 'gtask'}>
+      <button className="check" onClick={() => update({ done_at: task.done_at ? null : new Date().toISOString() })} aria-label={task.done_at ? 'Mark not done' : 'Mark done'}>
+        {task.done_at ? '✓' : ''}
+      </button>
+      <div className="gtask-body" onClick={() => setEditing(true)}>
+        <div className="gtask-title">{task.title}</div>
+        {task.details && <div className="gtask-notes">{task.details}</div>}
+        {task.due_date && task.done_at && <div className="muted small">{fmtWeekdayShort(task.due_date)}</div>}
+      </div>
+      <button className={task.starred ? 'star on' : 'star'} onClick={() => update({ starred: !task.starred })} aria-label={task.starred ? 'Unstar' : 'Star'}>
+        {task.starred ? '★' : '☆'}
+      </button>
+    </div>
+  )
+}
+
+function TaskEditor({ task, listId, lists, onDone, onSaved }: { task?: Task; listId: string; lists: TaskList[]; onDone: () => void; onSaved: () => Promise<void> }) {
+  const [title, setTitle] = useState(task?.title ?? '')
+  const [notes, setNotes] = useState(task?.details ?? '')
+  const [due, setDue] = useState(task?.due_date ?? '')
+  const [list, setList] = useState(listId)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!title.trim()) return onDone()
+    const fields = { title: title.trim(), details: notes, due_date: due || null, list_id: list }
+    const ok = await act(async () => must(task ? await supabase.from('tasks').update(fields).eq('id', task.id) : await supabase.from('tasks').insert(fields)))
+    if (!ok) return
+    onDone()
+    await onSaved()
+  }
+
+  async function remove() {
+    if (!task || !confirm(`Delete "${task.title}"?`)) return
+    const ok = await act(async () => must(await supabase.from('tasks').delete().eq('id', task.id)))
+    if (!ok) return
+    onDone()
+    await onSaved()
+  }
+
+  return (
+    <form className="gedit" onSubmit={submit}>
+      <input autoFocus placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <textarea rows={2} placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+      <div className="row">
+        <input type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
+        {due && (
+          <button type="button" className="btn small ghost" onClick={() => setDue('')}>
+            Clear date
+          </button>
+        )}
+        <select value={list} onChange={(e) => setList(e.target.value)} aria-label="List">
+          {lists.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="row">
+        <button className="btn small primary">Save</button>
+        <button type="button" className="btn small ghost" onClick={onDone}>
+          Cancel
+        </button>
+        {task && (
+          <button type="button" className="btn small ghost danger" onClick={remove}>
+            Delete
+          </button>
+        )}
+      </div>
     </form>
   )
 }

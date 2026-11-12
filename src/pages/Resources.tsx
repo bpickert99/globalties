@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { fmtShort, fmtTimeRange } from '../dates'
+import { daysBetween, fmtShort, fmtTimeRange, today } from '../dates'
 import { STATUS_LABELS } from '../logic'
 import MapView, { type MapPoint } from '../MapView'
 import ResourceForm from '../ResourceForm'
@@ -21,15 +21,17 @@ type Visit = {
 }
 
 async function load() {
-  const [resources, visits, projects] = await Promise.all([
+  const [resources, visits, projects, settings] = await Promise.all([
     supabase.from('resources').select('*').order('name'),
     supabase.from('schedule_items').select('id, project_id, resource_id, day, start_time, end_time, title, status').not('resource_id', 'is', null),
     supabase.from('projects').select('id, name, arrival_date, closed_at').order('arrival_date', { ascending: false }),
+    supabase.from('settings').select('fatigue_days').single(),
   ])
   return {
     resources: must(resources) as Resource[],
     visits: (must(visits) as Visit[]).sort((a, b) => a.day.localeCompare(b.day) || (a.start_time ?? '').localeCompare(b.start_time ?? '')),
     projects: must(projects) as Pick<Project, 'id' | 'name' | 'arrival_date' | 'closed_at'>[],
+    fatigueDays: (must(settings) as { fatigue_days: number }).fatigue_days,
   }
 }
 
@@ -212,7 +214,19 @@ export default function Resources() {
                       {r.lat === null && ' · not on map'}
                     </div>
                   </div>
-                  <span className="count">{visits.length} visit{visits.length === 1 ? '' : 's'}</span>
+                  <span className="count">
+                    {visits.length} visit{visits.length === 1 ? '' : 's'}
+                    {(() => {
+                      const met = visits.filter((v) => v.status !== 'declined' && v.day <= today()).pop()
+                      if (!met) return null
+                      const ago = daysBetween(met.day, today())
+                      return (
+                        <span className={ago <= data.fatigueDays ? 'fatigue-badge' : 'muted'} title={`Last met ${fmtShort(met.day)}`}>
+                          {ago <= data.fatigueDays ? `⚠ met ${ago}d ago` : `last met ${fmtShort(met.day)}`}
+                        </span>
+                      )
+                    })()}
+                  </span>
                 </div>
                 {open && (
                   <div className="resource-detail" onClick={(e) => e.stopPropagation()}>

@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Link, NavLink, Navigate, Route, Routes, useMatch } from 'react-router-dom'
 import Login, { NewPassword } from './pages/Login'
 import Logistics from './pages/Logistics'
 import Monday from './pages/Monday'
@@ -17,6 +17,8 @@ export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [recovering, setRecovering] = useState(false)
   const [access, setAccess] = useState<Access>('checking')
+  // Inside a project the site-wide menu steps back so the page is clearly about that project.
+  const inProject = useMatch('/projects/:id/*')
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -66,6 +68,13 @@ export default function App() {
             Global Ties <b>KC</b>
           </span>
         </div>
+        {inProject ? (
+          <nav>
+            <Link to="/projects" className="back-link">
+              ← All projects
+            </Link>
+          </nav>
+        ) : (
         <nav>
           <NavLink to="/todo">To-Do</NavLink>
           <NavLink to="/projects">Projects</NavLink>
@@ -75,11 +84,12 @@ export default function App() {
           </NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
+        )}
         <button className="btn small ghost signout" onClick={() => supabase.auth.signOut()}>
           Sign out
         </button>
       </header>
-      <main>
+      <main className={inProject ? 'in-project' : undefined}>
         <Routes>
           <Route path="/todo" element={<Todo />} />
           <Route path="/projects" element={<Projects />} />
