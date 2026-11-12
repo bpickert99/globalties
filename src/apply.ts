@@ -3,16 +3,18 @@
 
 import { geocode } from './resources'
 import { must, supabase } from './supabase'
-import type { Operation, Project, Resource, ResourceContact, Vendor } from './types'
+import { activePeople, fullName } from './logic'
+import type { HostGroup, Operation, Participant, Project, Resource, ResourceContact, Restaurant, Vendor } from './types'
 
 const PROJECT_FIELDS = [
-  'name', 'subtitle', 'countries', 'arrival_date', 'departure_date', 'npa_org', 'npa_address', 'npa_manager', 'npa_associate', 'billing_contact',
-  'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout',
-  'home_hospitality', 'lodging', 'has_event', 'luggage_count', 'vehicle_notes', 'drivers', 'notes',
+  'name', 'subtitle', 'countries', 'accepted_on', 'arrival_date', 'departure_date', 'sharepoint_url',
+  'npa_org', 'npa_address', 'npa_manager', 'npa_associate', 'billing_contact', 'sponsor_office', 'oiv_contacts',
+  'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout', 'hotel_blurb',
+  'home_hospitality', 'lodging', 'host_families', 'has_event', 'luggage_count', 'vehicle_notes', 'drivers', 'notes',
 ]
 const PARTICIPANT_FIELDS = ['role', 'given_name', 'family_name', 'position', 'country', 'gender', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'notes']
 const RESOURCE_FIELDS = ['name', 'category', 'address', 'location', 'directions', 'description', 'website', 'notes']
-const ITEM_FIELDS = ['day', 'start_time', 'end_time', 'kind', 'title', 'topic', 'description', 'status', 'internal_notes']
+const ITEM_FIELDS = ['day', 'start_time', 'end_time', 'kind', 'title', 'topic', 'description', 'status', 'internal_notes', 'restaurants', 'hh_groups']
 const VISITS = ['meeting', 'activity']
 
 function allowed(data: Record<string, unknown> | undefined, fields: string[]): Record<string, unknown> {
@@ -31,6 +33,28 @@ function contacts(raw: unknown): ResourceContact[] {
     .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
     .map((c) => ({ id: crypto.randomUUID(), name: String(c.name ?? ''), title: String(c.title ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? '') }))
     .filter((c) => c.name.trim())
+}
+
+function restaurants(raw: unknown): Restaurant[] {
+  if (!Array.isArray(raw)) throw new Error('restaurants must be a list')
+  return raw.map((r) => ({ name: String(r?.name ?? ''), address: String(r?.address ?? ''), description: String(r?.description ?? '') })).filter((r) => r.name.trim())
+}
+
+// Hosts with their guests: home hospitality groups or host families. Guests are given by name
+// ("Given FAMILY") so participants added in the same batch can be placed too.
+async function hostGroups(raw: unknown, ctx: Context): Promise<HostGroup[]> {
+  if (!Array.isArray(raw)) throw new Error('host list must be a list')
+  const people = activePeople(must(await supabase.from('participants').select('*').eq('project_id', ctx.project.id)) as Participant[])
+  const key = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  return raw.map((g) => {
+    const guests: unknown[] = Array.isArray(g?.guests) ? g.guests : []
+    const participant_ids = guests.map((name) => {
+      const match = people.find((p) => key(fullName(p)) === key(String(name)))
+      if (!match) throw new Error(`no participant named "${String(name)}"`)
+      return match.id
+    })
+    return { host: String(g?.host ?? ''), address: String(g?.address ?? ''), phone: String(g?.phone ?? ''), email: String(g?.email ?? ''), bio: String(g?.bio ?? ''), participant_ids }
+  })
 }
 
 type Context = { project: Project; refs: Map<string, string> }
@@ -74,6 +98,8 @@ async function scheduleFields(op: Operation, ctx: Context, creating: boolean): P
     fields.contact_ids = r.contacts.filter((c) => wanted.includes(c.name.toLowerCase().trim())).map((c) => c.id)
   }
   if (fields.status) fields.status_changed_at = new Date().toISOString()
+  if (fields.restaurants !== undefined) fields.restaurants = restaurants(fields.restaurants)
+  if (fields.hh_groups !== undefined) fields.hh_groups = await hostGroups(fields.hh_groups, ctx)
   return fields
 }
 
@@ -85,9 +111,13 @@ async function listId(project: Project, which: unknown): Promise<string> {
 async function applyOne(op: Operation, ctx: Context): Promise<void> {
   const { project } = ctx
   switch (op.type) {
-    case 'update_project':
-      must(await supabase.from('projects').update(allowed(op.data, PROJECT_FIELDS)).eq('id', project.id))
+    case 'update_project': {
+      const f = allowed(op.data, PROJECT_FIELDS)
+      if (f.host_families !== undefined) f.host_families = await hostGroups(f.host_families, ctx)
+      if (f.oiv_contacts !== undefined) f.oiv_contacts = contacts(f.oiv_contacts).map(({ name, title, phone, email }) => ({ name, title, phone, email }))
+      must(await supabase.from('projects').update(f).eq('id', project.id))
       return
+    }
     case 'add_participant': {
       const f = allowed(op.data, PARTICIPANT_FIELDS)
       need(f.given_name, 'given name')
@@ -139,12 +169,14 @@ async function applyOne(op: Operation, ctx: Context): Promise<void> {
   }
 }
 
-// Applies the chosen operations (resources first so later ones can link to them) and
+// Applies the chosen operations (new resources and participants first, so later ones can link
+// to them) and
 // returns every operation with its new status.
 export async function applyOperations(project: Project, ops: Operation[], chosen: Set<number>): Promise<Operation[]> {
   const ctx: Context = { project: { ...project }, refs: new Map() }
   const result = ops.map((o) => ({ ...o }))
-  const order = result.map((_, i) => i).sort((a, b) => Number(result[b].type === 'add_resource') - Number(result[a].type === 'add_resource'))
+  const first = (op: Operation) => Number(op.type === 'add_resource' || op.type === 'add_participant')
+  const order = result.map((_, i) => i).sort((a, b) => first(result[b]) - first(result[a]))
   for (const i of order) {
     const op = result[i]
     if (op.status !== 'pending') continue

@@ -17,6 +17,7 @@ How to help:
 - Before adding a resource, check the resource library in the project data. If the organization is already there, use its id instead of adding a duplicate. When a library entry shows a recent meeting (last_met within the fatigue window), mention it so the user can avoid asking the same organization too often.
 - Use ISO dates (YYYY-MM-DD) and 24-hour times (HH:MM). Use ids exactly as they appear in the project data. Leave out fields you don't know rather than guessing; put uncertain details in the reason instead.
 - If something is ambiguous (which participant an email means, whether a meeting is confirmed), ask instead of proposing.
+- You can see and propose changes to every part of the project: details, NPA and State Department contacts, participants, the schedule (meetings, meals with restaurant recommendations, transport, pickups, flights, home hospitality groups), resources, the hotel or the host families and who stays with each, Agenda USA details, the checklist and the to-do lists. When placing visitors with hosts, keep each visitor with one host and mention gender balance if the data records gender.
 - Write plainly and briefly. Use short paragraphs or bullet lists; no headings for short answers.`
 
 const OPERATION_TYPES = [
@@ -36,13 +37,13 @@ const OPERATION_TYPES = [
 export const PROPOSE_TOOL: Anthropic.Beta.BetaTool = {
   name: 'propose_changes',
   description: `Propose changes to the project for the user to review. Nothing is changed until the user approves each operation. Operation types and their fields:
-- update_project: data = any of name, subtitle, countries, arrival_date, departure_date, npa_org, npa_address, npa_manager {name,title,phone,email}, npa_associate {name,title,phone,email}, billing_contact ("manager"|"associate"), hotel_name, hotel_address, hotel_phone, hotel_contact_name, hotel_contact_email, hotel_rate, hotel_eta (HH:MM), hotel_checkout (HH:MM), home_hospitality (boolean: a dinner in a local home), lodging ("hotel" | "host_families": host_families when the group stays with host families instead of a hotel), has_event (boolean), luggage_count (number), vehicle_notes, drivers [{role,name,phone}], notes.
+- update_project: data = any of name, subtitle, countries, accepted_on, arrival_date, departure_date, sharepoint_url, npa_org, npa_address, npa_manager {name,title,phone,email}, npa_associate {name,title,phone,email}, billing_contact ("manager"|"associate"), sponsor_office (the State Department office, e.g. "Office of International Visitors"), oiv_contacts [{name,title,phone,email}] (State Department contacts; the complete list), hotel_name, hotel_address, hotel_phone, hotel_contact_name, hotel_contact_email, hotel_rate, hotel_eta (HH:MM), hotel_checkout (HH:MM), hotel_blurb (the hotel welcome paragraph on the itinerary), home_hospitality (boolean: a dinner in a local home), lodging ("hotel" | "host_families": host_families when the group stays with host families instead of a hotel), host_families [{host,address,phone,email,bio,guests}] (the complete list of host families; guests = participant names exactly as "Given FAMILY" in the project data, including participants added in the same call), has_event (boolean), luggage_count (number), vehicle_notes, drivers [{role,name,phone}], notes.
 - add_participant: data = given_name, family_name (required), role ("participant"|"interpreter"|"liaison"), position (title and organization), country, gender ("female"|"male", only when the source states it), phone, email, dietary, media_consent ("yes"|"no"|"unknown"), arrival_flight, departure_flight, hotel_confirmation, bio, notes.
 - update_participant: id = participant id; data = fields to change (same as add_participant).
 - cancel_participant: id = participant id (for someone who is no longer coming).
 - add_resource: ref = a short key you choose (e.g. "r1") so add_schedule_item can point to it in the same call; data = name (required), category ("nonprofit"|"government"|"education"|"business"|"cultural"|"media"|"health"|"faith"|"other"), address, location (building/room), directions, description (for the itinerary), website, contacts [{name,title,phone,email}], notes.
 - update_resource: id = resource id; data = fields to change (same as add_resource).
-- add_schedule_item: data = day (YYYY-MM-DD, required), kind ("meeting"|"activity"|"meal"|"transport"|"pickup"|"flight"|"note"|"home_hospitality", required; "pickup" is a pick-up or bus departure: give start_time only, never end_time; "flight": start_time = takeoff and end_time = landing, both required, as printed on the ticket), title (required), start_time, end_time (HH:MM), resource_id (existing resource) or resource_ref (a ref from add_resource) — required for meeting and activity, contact_names (names of the resource's contacts attending), topic, description, status for meetings ("planned"|"requested"|"confirmed"|"declined"|"thanked"), internal_notes.
+- add_schedule_item: data = day (YYYY-MM-DD, required), kind ("meeting"|"activity"|"meal"|"transport"|"pickup"|"flight"|"note"|"home_hospitality", required; "pickup" is a pick-up or bus departure: give start_time only, never end_time; "flight": start_time = takeoff and end_time = landing, both required, as printed on the ticket), title (required), start_time, end_time (HH:MM), resource_id (existing resource) or resource_ref (a ref from add_resource) — required for meeting and activity, contact_names (names of the resource's contacts attending), topic, description, restaurants [{name,address,description}] (recommendations for a meal; the complete list), hh_groups [{host,address,phone,email,bio,guests}] (home hospitality groups; the complete list; guests as for host_families), status for meetings ("planned"|"requested"|"confirmed"|"declined"|"thanked"), internal_notes.
 - update_schedule_item: id = schedule item id; data = fields to change (same as add_schedule_item).
 - add_task: data = title (required), notes, due_date (YYYY-MM-DD), list ("project" for this project's to-do list, "general" for the General list).
 - complete_task: id = task id (a checklist task or a to-do task).
@@ -171,6 +172,17 @@ function applies(task: Row, project: Row): boolean {
   return true
 }
 
+type HostGroupRow = { host: string; address: string; phone: string; email: string; bio: string; participant_ids: string[] }
+
+// Host families and home hospitality groups, with guests by name as the tool expects them back.
+function withGuests(groups: HostGroupRow[], participants: Row[]) {
+  const name = (id: string) => {
+    const p = participants.find((x) => x.id === id)
+    return p ? `${p.given_name} ${String(p.family_name).toUpperCase()}` : id
+  }
+  return groups.map(({ participant_ids, ...g }) => ({ ...g, guests: participant_ids.map(name) }))
+}
+
 const pick = (row: Row, keys: string[]) => Object.fromEntries(keys.filter((k) => row[k] !== '' && row[k] !== null && row[k] !== undefined).map((k) => [k, row[k]]))
 
 // Compact, stable JSON of everything the assistant may need for this project.
@@ -190,18 +202,23 @@ export function buildSnapshot(s: SnapshotInput): string {
       today: s.today,
       fatigue_window_days: s.settings.fatigue_days,
       project: {
-        ...pick(p, ['id', 'name', 'subtitle', 'countries', 'accepted_on', 'arrival_date', 'departure_date', 'npa_org', 'npa_address', 'billing_contact', 'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout', 'home_hospitality', 'lodging', 'host_families', 'has_event', 'luggage_count', 'vehicle_notes', 'notes', 'closed_at']),
+        ...pick(p, ['id', 'name', 'subtitle', 'countries', 'accepted_on', 'arrival_date', 'departure_date', 'npa_org', 'npa_address', 'billing_contact', 'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout', 'hotel_blurb', 'home_hospitality', 'lodging', 'has_event', 'sharepoint_url', 'sponsor_office', 'luggage_count', 'vehicle_notes', 'notes', 'closed_at']),
         program_type: s.programType,
         npa_manager: p.npa_manager,
         npa_associate: p.npa_associate,
         oiv_contacts: p.oiv_contacts,
+        host_families: withGuests(p.host_families as HostGroupRow[], s.participants),
         drivers: p.drivers,
         hotel_rooming_list_last_sent: p.hotel_sent_at ?? null,
         agenda_calendar_last_sent: p.transport_sent_at ?? null,
         vendor_log: p.vendor_log,
       },
-      participants: s.participants.map((x) => pick(x, ['id', 'role', 'given_name', 'family_name', 'position', 'country', 'gender', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'cancelled_at'])),
-      schedule: s.items.map((x) => pick(x, ['id', 'day', 'start_time', 'end_time', 'kind', 'title', 'resource_id', 'contact_ids', 'topic', 'status', 'description', 'internal_notes'])),
+      participants: s.participants.map((x) => pick(x, ['id', 'role', 'given_name', 'family_name', 'position', 'country', 'gender', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'notes', 'cancelled_at'])),
+      schedule: s.items.map((x) => ({
+        ...pick(x, ['id', 'day', 'start_time', 'end_time', 'kind', 'title', 'resource_id', 'contact_ids', 'topic', 'status', 'description', 'internal_notes']),
+        ...((x.restaurants as unknown[]).length ? { restaurants: x.restaurants } : {}),
+        ...((x.hh_groups as unknown[]).length ? { hh_groups: withGuests(x.hh_groups as HostGroupRow[], s.participants) } : {}),
+      })),
       resources_in_this_project: s.resources.filter((r) => usedHere.has(r.id)).map((r) => ({ ...pick(r, ['id', 'name', 'category', 'address', 'location', 'directions', 'description', 'website', 'notes']), contacts: r.contacts })),
       resource_library: s.resources.map((r) => ({ id: r.id, name: r.name, category: r.category, last_met: lastMet(r.id as string) })),
       checklist: s.tasks
