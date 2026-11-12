@@ -188,7 +188,7 @@ function groupPeople(group: HostGroup, people: Participant[]): Participant[] {
 // The rideshare departure is the last transport item on that day before the dinner.
 function hotelDeparture(item: ScheduleItem, items: ScheduleItem[]): string {
   const before = sortItems(items).filter(
-    (i) => i.day === item.day && i.kind === 'transport' && i.start_time && item.start_time && i.start_time < item.start_time,
+    (i) => i.day === item.day && (i.kind === 'transport' || i.kind === 'pickup') && i.start_time && item.start_time && i.start_time < item.start_time,
   )
   const last = before[before.length - 1]
   return last ? fmtTimeRange(last.start_time, null) : '[TIME]'

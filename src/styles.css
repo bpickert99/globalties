@@ -275,6 +275,7 @@ tr.divider td { background: var(--soft); font-weight: 600; color: var(--muted); 
 .kind-activity { border-left-color: #6b4fa0; }
 .kind-home_hospitality { border-left-color: var(--accent); }
 .kind-meal { border-left-color: #3f8f6b; }
+.kind-pickup { border-left-color: var(--accent); }
 .kind-note { border-left-color: #b9bab0; font-style: italic; }
 .item-time { width: 130px; flex: none; font-size: 0.88rem; color: var(--muted); }
 .item-main { flex: 1; min-width: 0; }
@@ -339,6 +340,8 @@ tr.divider td { background: var(--soft); font-weight: 600; color: var(--muted); 
 .cal-item.kind-activity { border-left-color: #6b4fa0; background: #f0ebf8; }
 .cal-item.kind-meal { border-left-color: #3f8f6b; background: #e9f5ef; }
 .cal-item.kind-home_hospitality { border-left-color: var(--accent); background: #fdf1e5; }
+.cal-item.kind-pickup { border-left-color: var(--accent); background: #fdf4dc; flex-direction: row; gap: 6px; align-items: center; }
+.cal-item.kind-pickup .cal-title::before { content: '🚌 '; }
 .cal-item.kind-transport, .cal-item.kind-flight { border-left-color: #a7a7a7; background: var(--soft); }
 .cal-item.status-declined { opacity: 0.5; text-decoration: line-through; }
 .modal { position: fixed; inset: 0; background: rgba(40, 40, 40, 0.5); z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; overflow-y: auto; }

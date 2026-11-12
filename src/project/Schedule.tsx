@@ -198,7 +198,7 @@ function CopyFromProject({ data, onDone }: { data: TabProps['data']; onDone: () 
   const sourceItems = useData(async () => (sourceId ? (must(await supabase.from('schedule_items').select('*').eq('project_id', sourceId)) as ScheduleItem[]) : []), [sourceId])
   const [chosen, setChosen] = useState<Set<string> | null>(null)
   const list = sortItems(sourceItems.data ?? []).filter((i) => i.kind !== 'flight')
-  const picked = chosen ?? new Set(list.filter((i) => i.kind !== 'transport').map((i) => i.id))
+  const picked = chosen ?? new Set(list.filter((i) => i.kind !== 'transport' && i.kind !== 'pickup').map((i) => i.id))
   const span = daysBetween(data.project.arrival_date, data.project.departure_date)
 
   async function copy() {
@@ -309,6 +309,7 @@ function ItemForm({
     set({
       kind: k,
       status: k === 'meeting' ? (form.status ?? 'planned') : null,
+      ...(k === 'pickup' ? { end_time: null } : {}),
       ...(visit ? {} : { resource_id: null, contact_ids: [] }),
     })
   }
@@ -381,12 +382,14 @@ function ItemForm({
         </Field>
         {kind !== 'note' && (
           <>
-            <Field label="Start">
-              <input type="time" value={form.start_time?.slice(0, 5) ?? ''} onChange={(e) => set({ start_time: e.target.value || null })} />
+            <Field label={kind === 'pickup' ? 'Pickup time' : 'Start'}>
+              <input type="time" required={kind === 'pickup'} value={form.start_time?.slice(0, 5) ?? ''} onChange={(e) => set({ start_time: e.target.value || null })} />
             </Field>
-            <Field label="End">
-              <input type="time" value={form.end_time?.slice(0, 5) ?? ''} onChange={(e) => set({ end_time: e.target.value || null })} />
-            </Field>
+            {kind !== 'pickup' && (
+              <Field label="End">
+                <input type="time" value={form.end_time?.slice(0, 5) ?? ''} onChange={(e) => set({ end_time: e.target.value || null })} />
+              </Field>
+            )}
           </>
         )}
         {kind === 'meeting' && (
@@ -466,7 +469,7 @@ function ItemForm({
           value={form.title}
           onChange={(e) => set({ title: e.target.value })}
           placeholder={
-            kind === 'flight' ? 'Arrive on American Airlines #3764 from Chicago, IL' : kind === 'transport' ? 'Depart Hotel' : kind === 'meal' ? 'Lunch' : isVisit ? 'Workshop: Midwest Center for Nonprofit Leadership' : ''
+            kind === 'flight' ? 'Arrive on American Airlines #3764 from Chicago, IL' : kind === 'transport' ? 'Drop-Offs' : kind === 'pickup' ? 'Pick-Ups' : kind === 'meal' ? 'Lunch' : isVisit ? 'Workshop: Midwest Center for Nonprofit Leadership' : ''
           }
         />
       </Field>

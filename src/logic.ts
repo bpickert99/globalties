@@ -70,6 +70,7 @@ export const KIND_LABELS: Record<ScheduleItem['kind'], string> = {
   activity: 'Cultural activity',
   home_hospitality: 'Home hospitality',
   transport: 'Transport',
+  pickup: 'Pickup / bus departure',
   flight: 'Flight',
   note: 'Note',
 }

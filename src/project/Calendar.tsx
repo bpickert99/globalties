@@ -26,8 +26,12 @@ type Drag = { item: ScheduleItem; mode: 'move' | 'resize'; x: number; y: number;
 
 export type Move = { day: string; start_time: string; end_time: string | null }
 
+// A pickup has only a start time; it is drawn as a short marker.
+const PICKUP_MIN = 25
+
 function itemSpan(item: ScheduleItem): { start: number; end: number } {
   const start = minutes(item.start_time!)
+  if (item.kind === 'pickup') return { start, end: start + PICKUP_MIN }
   return { start, end: item.end_time ? Math.max(minutes(item.end_time), start + 15) : start + 60 }
 }
 
@@ -218,7 +222,7 @@ export default function CalendarView({
                   {warnings.has(p.item.id) && '⚠ '}
                   {p.item.title}
                 </span>
-                <span className="cal-resize" aria-hidden onPointerDown={(e) => beginDrag(e, p.item, 'resize')} />
+                {p.item.kind !== 'pickup' && <span className="cal-resize" aria-hidden onPointerDown={(e) => beginDrag(e, p.item, 'resize')} />}
               </button>
             ))}
           </div>

@@ -144,7 +144,7 @@ export type Participant = {
   created_at: string
 }
 
-export type ItemKind = 'meeting' | 'meal' | 'activity' | 'home_hospitality' | 'transport' | 'flight' | 'note'
+export type ItemKind = 'meeting' | 'meal' | 'activity' | 'home_hospitality' | 'transport' | 'pickup' | 'flight' | 'note'
 export type MeetingStatus = 'planned' | 'requested' | 'confirmed' | 'declined' | 'thanked'
 
 export type Restaurant = { name: string; address: string; description: string }

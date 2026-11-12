@@ -66,6 +66,8 @@ async function scheduleFields(op: Operation, ctx: Context, creating: boolean): P
   }
   if (kind && !VISITS.includes(kind)) fields.resource_id = null
   if (kind && kind !== 'meeting') fields.status = null
+  // Pickups record only when the group is picked up.
+  if (kind === 'pickup') fields.end_time = null
   if (resourceId && Array.isArray(data.contact_names)) {
     const r = must(await supabase.from('resources').select('contacts').eq('id', resourceId).single()) as Pick<Resource, 'contacts'>
     const wanted = (data.contact_names as unknown[]).map((n) => String(n).toLowerCase().trim())
