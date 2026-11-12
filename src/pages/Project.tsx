@@ -17,6 +17,8 @@ import type { Participant, ProgramType, Project, Resource, ScheduleItem, Setting
 import { act, Loading, useData } from '../ui'
 import { downloadItinerary } from '../itinerary'
 
+const ASSISTANT_OPEN_KEY = 'gtkc.assistantOpen'
+
 export type ProjectData = {
   project: Project
   programType: ProgramType
@@ -66,7 +68,12 @@ export default function ProjectPage() {
   if (!id) throw new Error('Missing project id')
   const navigate = useNavigate()
   const { data, error, reload } = useData(() => load(id), [id])
-  const [assistantOpen, setAssistantOpen] = useState(false)
+  // Remembered in this browser, so the panel stays open when you leave a project and come back.
+  const [assistantOpen, setOpen] = useState(() => localStorage.getItem(ASSISTANT_OPEN_KEY) === '1')
+  const setAssistantOpen = (open: boolean) => {
+    localStorage.setItem(ASSISTANT_OPEN_KEY, open ? '1' : '0')
+    setOpen(open)
+  }
   if (!data) return <Loading error={error} />
   const { project } = data
   const prog = progress(project, data.tasks)
