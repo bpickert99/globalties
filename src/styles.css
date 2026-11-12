@@ -101,7 +101,9 @@ main.in-project { max-width: 1400px; }
 .assistant.dragging { outline: 3px dashed var(--accent); }
 .assistant-head { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .assistant-head select { flex: 1; min-width: 0; font-size: 0.85rem; }
-.assistant-log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.assistant-log { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+/* Messages keep their full height; the log scrolls instead of squeezing them to fit. */
+.assistant-log > * { flex-shrink: 0; }
 .assistant-empty { color: var(--text); font-size: 0.92rem; }
 .assistant-empty ul { padding-left: 18px; }
 .bubble { border-radius: 12px; padding: 10px 12px; font-size: 0.92rem; line-height: 1.45; }
