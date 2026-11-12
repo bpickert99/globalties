@@ -145,7 +145,7 @@ export default function AssistantPanel({ data, reload, onClose }: TabProps & { o
           </div>
         )}
         {messages.data?.map((m) => (
-          <div key={m.id} className={`bubble ${m.role}`}>
+          <div key={m.id} className={`bubble from-${m.role}`}>
             {m.role === 'user' && m.ui.attachments && m.ui.attachments.length > 0 && (
               <div className="chips">
                 {m.ui.attachments.map((a) => (
@@ -161,7 +161,7 @@ export default function AssistantPanel({ data, reload, onClose }: TabProps & { o
             ))}
           </div>
         ))}
-        {busy && <div className="bubble assistant muted">Reading and thinking… this can take up to a minute for long documents.</div>}
+        {busy && <div className="bubble from-assistant muted">Reading and thinking… this can take up to a minute for long documents.</div>}
         {failure && <FailureNote failure={failure} />}
         <div ref={endRef} />
       </div>
