@@ -27,8 +27,8 @@ import {
   WidthType,
 } from 'docx'
 import logoUrl from './assets/gtkc-logo.png?inline'
-import { dayRange, fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
-import { activePeople, fullName, sortItems } from './logic'
+import { dayRange, fmtLong, fmtRange, parseDate } from './dates'
+import { activePeople, fullName, itineraryTime, sortItems } from './logic'
 import { resourceOf, visitContacts } from './resources'
 import type { Contact, Participant, ProgramType, Project, Resource, ScheduleItem, Settings, Staff } from './types'
 
@@ -273,7 +273,7 @@ function contactsPage(input: ItineraryInput): Paragraph[] {
 
 const GRID_SIZE = 18 // 9 pt
 
-function gridCell(dayItems: ScheduleItem[]): Paragraph[] {
+function gridCell(dayItems: ScheduleItem[], project: Project): Paragraph[] {
   const out: Paragraph[] = []
   for (const item of dayItems) {
     if (item.kind === 'note')
@@ -285,7 +285,7 @@ function gridCell(dayItems: ScheduleItem[]): Paragraph[] {
       )
   }
   for (const item of dayItems.filter((i) => i.kind !== 'note')) {
-    const time = fmtTimeRange(item.start_time, item.end_time)
+    const time = itineraryTime(item, project)
     if (time) out.push(p([run(time, { size: GRID_SIZE })], { align: 'center' }))
     out.push(
       p([run(item.title, { bold: true, size: GRID_SIZE })], {
@@ -337,7 +337,7 @@ function gridPage({ project, items }: ItineraryInput): (Paragraph | Table)[] {
       (d) =>
         new TableCell({
           width: { size: colWidth, type: WidthType.DXA },
-          children: gridCell(sorted.filter((i) => i.day === d)),
+          children: gridCell(sorted.filter((i) => i.day === d), project),
         }),
     ),
   })
@@ -436,7 +436,7 @@ function homeHospitality(item: ScheduleItem, people: Participant[]): (Paragraph 
 
 function itemBlock(item: ScheduleItem, input: ItineraryInput): (Paragraph | Table)[] {
   if (item.kind === 'note') return [p([run(item.title, { italics: true })]), blank()]
-  const time = fmtTimeRange(item.start_time, item.end_time)
+  const time = itineraryTime(item, input.project)
   const out: (Paragraph | Table)[] = [
     p([run(time, { bold: true }), tab({ bold: true }), run(item.title, { bold: true })], { left: VALUE_TAB, hanging: VALUE_TAB, tabAt: VALUE_TAB }),
     blank(),

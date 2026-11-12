@@ -1,5 +1,12 @@
-import { addDays, daysBetween, today } from './dates'
+import { addDays, daysBetween, fmtTimeRange, today } from './dates'
 import type { Anchor, Participant, Project, ScheduleItem, Task } from './types'
+
+// The time printed on the itinerary. Flights are stored from takeoff to landing: the flight into
+// Kansas City (on the arrival day) shows when it lands, a flight out shows when it takes off.
+export function itineraryTime(item: ScheduleItem, project: Project): string {
+  if (item.kind === 'flight') return fmtTimeRange(item.day === project.arrival_date ? item.end_time : item.start_time, null)
+  return fmtTimeRange(item.start_time, item.end_time)
+}
 
 export function anchorDate(project: Project, anchor: Anchor): string {
   if (anchor === 'accepted') return project.accepted_on

@@ -382,12 +382,12 @@ function ItemForm({
         </Field>
         {kind !== 'note' && (
           <>
-            <Field label={kind === 'pickup' ? 'Pickup time' : 'Start'}>
-              <input type="time" required={kind === 'pickup'} value={form.start_time?.slice(0, 5) ?? ''} onChange={(e) => set({ start_time: e.target.value || null })} />
+            <Field label={kind === 'pickup' ? 'Pickup time' : kind === 'flight' ? 'Takes off' : 'Start'}>
+              <input type="time" required={kind === 'pickup' || kind === 'flight'} value={form.start_time?.slice(0, 5) ?? ''} onChange={(e) => set({ start_time: e.target.value || null })} />
             </Field>
             {kind !== 'pickup' && (
-              <Field label="End">
-                <input type="time" value={form.end_time?.slice(0, 5) ?? ''} onChange={(e) => set({ end_time: e.target.value || null })} />
+              <Field label={kind === 'flight' ? 'Lands' : 'End'}>
+                <input type="time" required={kind === 'flight'} value={form.end_time?.slice(0, 5) ?? ''} onChange={(e) => set({ end_time: e.target.value || null })} />
               </Field>
             )}
           </>

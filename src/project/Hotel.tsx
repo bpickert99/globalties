@@ -26,7 +26,7 @@ export default function Hotel({ data, reload }: TabProps) {
   const changes = project.hotel_sent ? hotelChanges(project.hotel_sent, now) : []
   const steps = tasks.filter((t) => taskApplies(t, project) && /hotel/i.test(t.title))
   const missingConfirmations = rows.filter((r) => !r.confirmation).length
-  const landing = sortItems(items).find((i) => i.day === project.arrival_date && i.kind === 'flight' && i.start_time)?.start_time ?? null
+  const landing = sortItems(items).find((i) => i.day === project.arrival_date && i.kind === 'flight')?.end_time ?? null
 
   async function update(patch: Partial<Project>) {
     await act(async () => must(await supabase.from('projects').update(patch).eq('id', project.id)))
