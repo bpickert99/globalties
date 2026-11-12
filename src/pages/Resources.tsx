@@ -168,7 +168,7 @@ export default function Resources() {
           </div>
         </div>
         <div className="list-pane">
-          {form}
+          {editing === 'new' && form}
           <div className="filters">
             <input placeholder="Search name, address, contact…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select value={category} onChange={(e) => setCategory(e.target.value as ResourceCategory | '')} aria-label="Category">
@@ -203,6 +203,13 @@ export default function Resources() {
             {shown.some((r) => r.lat === null) && ` · ${shown.filter((r) => r.lat === null).length} not on the map`}
           </div>
           {shown.map((r, i) => {
+            // The edit form opens where the resource is, not at the top of a long list.
+            if (editing === r.id)
+              return (
+                <div key={r.id} className="scroll-target" ref={(el) => el?.scrollIntoView({ block: 'start', behavior: 'smooth' })}>
+                  {form}
+                </div>
+              )
             const visits = data.visits.filter((v) => v.resource_id === r.id)
             const open = r.id === selectedId
             return (

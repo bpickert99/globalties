@@ -155,6 +155,8 @@ main.in-project { max-width: 1400px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
 .field.wide { grid-column: 1 / -1; }
 .field > input, .field > select { width: 100%; }
+/* Scrolled-to elements clear the sticky header. */
+.scroll-target { scroll-margin-top: 76px; }
 .page-back { display: inline-block; margin-bottom: 10px; font-weight: 700; text-decoration: none; }
 .page-back:hover { text-decoration: underline; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
