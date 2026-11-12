@@ -6,6 +6,7 @@ import AssistantPanel from '../project/Assistant'
 import Checklist from '../project/Checklist'
 import Documents from '../project/Documents'
 import Emails from '../project/Emails'
+import HostFamilies from '../project/HostFamilies'
 import Hotel from '../project/Hotel'
 import Overview from '../project/Overview'
 import Participants from '../project/Participants'
@@ -82,7 +83,7 @@ export default function ProjectPage() {
     ['checklist', `Checklist (${prog.done}/${prog.total})`],
     ['participants', 'Participants'],
     ['schedule', 'Schedule'],
-    ['hotel', 'Hotel'],
+    data.project.lodging === 'hotel' ? ['hotel', 'Hotel'] : ['host-families', 'Host Families'],
     ['transportation', 'Transportation'],
     ['emails', 'Emails'],
     ['documents', 'Documents'],
@@ -140,7 +141,11 @@ export default function ProjectPage() {
         <Route path="checklist" element={<Checklist data={data} reload={reload} />} />
         <Route path="participants" element={<Participants data={data} reload={reload} />} />
         <Route path="schedule" element={<Schedule data={data} reload={reload} />} />
-        <Route path="hotel" element={<Hotel data={data} reload={reload} />} />
+        {data.project.lodging === 'hotel' ? (
+          <Route path="hotel" element={<Hotel data={data} reload={reload} />} />
+        ) : (
+          <Route path="host-families" element={<HostFamilies data={data} reload={reload} />} />
+        )}
         <Route path="transportation" element={<Transportation data={data} reload={reload} />} />
         <Route path="emails" element={<Emails data={data} reload={reload} />} />
         <Route path="documents" element={<Documents data={data} reload={reload} />} />

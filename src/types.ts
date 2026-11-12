@@ -1,7 +1,8 @@
 // Row types mirroring supabase/migrations.
 
 export type Anchor = 'accepted' | 'arrival' | 'departure'
-export type Requires = 'none' | 'home_hospitality' | 'event'
+export type Requires = 'none' | 'home_hospitality' | 'event' | 'hotel'
+export type Lodging = 'hotel' | 'host_families'
 export type EmailKey =
   | 'hotel_request'
   | 'hotel_npa_connect'
@@ -70,6 +71,8 @@ export type Project = {
   billing_contact: 'manager' | 'associate'
   sponsor_office: string
   oiv_contacts: Contact[]
+  lodging: Lodging
+  host_families: HostGroup[]
   hotel_name: string
   hotel_address: string
   hotel_phone: string

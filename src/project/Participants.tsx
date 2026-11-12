@@ -29,6 +29,7 @@ const ROLE_LABEL: Record<ParticipantRole, string> = { participant: 'Participant'
 const CONSENT_LABEL: Record<MediaConsent, string> = { unknown: '?', yes: 'Yes', no: 'No' }
 
 export default function Participants({ data, reload }: TabProps) {
+  const hotel = data.project.lodging === 'hotel'
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const active = activePeople(data.people)
   const cancelled = data.people.filter((p) => p.cancelled_at)
@@ -61,7 +62,7 @@ export default function Participants({ data, reload }: TabProps) {
         {p.arrival_flight}
         {p.departure_flight && <div>{p.departure_flight}</div>}
       </td>
-      <td>{p.hotel_confirmation}</td>
+      {hotel && <td>{p.hotel_confirmation}</td>}
       <td className="actions">
         <button className="btn small" onClick={() => setEditing(p.id)}>
           Edit
@@ -111,6 +112,7 @@ export default function Participants({ data, reload }: TabProps) {
       {unknownConsent.length > 0 && <p className="notice">Media consent not yet recorded for {unknownConsent.length} people.</p>}
       {editing && (
         <PersonForm
+          hotel={hotel}
           key={editing}
           projectId={data.project.id}
           person={editingPerson}
@@ -131,7 +133,7 @@ export default function Participants({ data, reload }: TabProps) {
               <th>Dietary</th>
               <th>Media</th>
               <th>Flights</th>
-              <th>Hotel conf.</th>
+              {hotel && <th>Hotel conf.</th>}
               <th />
             </tr>
           </thead>
@@ -151,7 +153,19 @@ export default function Participants({ data, reload }: TabProps) {
   )
 }
 
-function PersonForm({ projectId, person, onClose, onSaved }: { projectId: string; person?: Participant; onClose: () => void; onSaved: () => Promise<void> }) {
+function PersonForm({
+  projectId,
+  hotel,
+  person,
+  onClose,
+  onSaved,
+}: {
+  projectId: string
+  hotel: boolean
+  person?: Participant
+  onClose: () => void
+  onSaved: () => Promise<void>
+}) {
   const [form, setForm] = useState<Draft>(() => {
     if (!person) return BLANK
     const { id, project_id, cancelled_at, created_at, ...rest } = person
@@ -206,7 +220,7 @@ function PersonForm({ projectId, person, onClose, onSaved }: { projectId: string
         </Field>
         {text('arrival_flight', 'Arrival flight', 'AA #3764 3:22 pm')}
         {text('departure_flight', 'Departure flight', 'AS #418 1:34 pm')}
-        {text('hotel_confirmation', 'Hotel confirmation #')}
+        {hotel && text('hotel_confirmation', 'Hotel confirmation #')}
       </div>
       <Field label="Short bio (for home hospitality hosts)" wide>
         <textarea rows={3} value={form.bio} onChange={(e) => set({ bio: e.target.value })} />

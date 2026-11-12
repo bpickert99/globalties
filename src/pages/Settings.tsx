@@ -3,6 +3,7 @@ import { EMAIL_LABELS } from '../emails'
 import { must, supabase } from '../supabase'
 import type { Anchor, EmailKey, ProgramType, Requires, Settings, Staff, TaskTemplate } from '../types'
 import { act, Field, Loading, useData } from '../ui'
+import { REQUIRES_LABEL } from '../logic'
 
 async function load() {
   const [settings, staff, types, templates, members] = await Promise.all([
@@ -216,7 +217,7 @@ function Checklists({ types, templates, onSaved }: { types: ProgramType[]; templ
                 <td>
                   {(i === 0 || list[i - 1].phase !== t.phase) && <div className="phase">{t.phase}</div>}
                   <b>{t.title}</b>
-                  {t.requires !== 'none' && <span className="chip subtle">{t.requires === 'home_hospitality' ? 'Home hospitality' : 'Event'}</span>}
+                  {t.requires !== 'none' && <span className="chip subtle">{REQUIRES_LABEL[t.requires]}</span>}
                   {t.details && <div className="muted small">{t.details}</div>}
                 </td>
                 <td className="muted small nowrap">{describeOffset(t)}</td>
@@ -295,6 +296,7 @@ function TemplateForm({
             <option value="none">Always</option>
             <option value="home_hospitality">Home hospitality</option>
             <option value="event">Event</option>
+            <option value="hotel">Hotel stay (not host families)</option>
           </select>
         </Field>
         <Field label="Email draft">

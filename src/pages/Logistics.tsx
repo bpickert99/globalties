@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { daysBetween, fmtRange, fmtShort, fmtWeekdayShort, today } from '../dates'
 import { hotelChanges, hotelSnapshot, roomingRows } from '../hotel'
-import { taskApplies, taskDue } from '../logic'
+import { activePeople, taskApplies, taskDue } from '../logic'
 import { must, supabase } from '../supabase'
 import { changesSince, passengers, snapshot } from '../transport'
 import type { Participant, Project, ScheduleItem, Task } from '../types'
@@ -64,6 +64,8 @@ export default function Logistics() {
               const agenda = sentStatus(p.transport_sent_at, p.transport_sent ? changesSince(p.transport_sent, snapshot(p, people, items)) : [])
               const booked = tasks.find((t) => t.email_key === 'transport_request')?.done_at
               const missingConf = roomingRows(people).filter((r) => !r.confirmation).length
+              const placed = new Set(p.host_families.flatMap((f) => f.participant_ids))
+              const unplaced = activePeople(people).filter((x) => !placed.has(x.id)).length
               const next = tasks
                 .filter((t) => !t.done_at && /hotel|agenda/i.test(t.title))
                 .map((t) => ({ t, due: taskDue(t, p) ?? '9999' }))
@@ -72,20 +74,27 @@ export default function Logistics() {
               return (
                 <tr key={p.id}>
                   <td>
-                    <Link to={`/projects/${p.id}/hotel`}>
+                    <Link to={`/projects/${p.id}/${p.lodging === 'hotel' ? 'hotel' : 'host-families'}`}>
                       <b>{p.name}</b>
                     </Link>
                     <div className="muted small">
                       {fmtRange(p.arrival_date, p.departure_date)} · {days > 0 ? `in ${days} days` : 'in KC now'}
                     </div>
                   </td>
-                  <td>
-                    <div>{p.hotel_name || <span className="muted">No hotel</span>}</div>
-                    <div className="small">
-                      {hotelSnapshot(p, people).rooms} rooms{missingConf > 0 && ` · ${missingConf} without confirmation #`}
-                    </div>
-                    <div className={`small tone-${hotel.tone}`}>Rooming list: {hotel.text}</div>
-                  </td>
+                  {p.lodging === 'hotel' ? (
+                    <td>
+                      <div>{p.hotel_name || <span className="muted">No hotel</span>}</div>
+                      <div className="small">
+                        {hotelSnapshot(p, people).rooms} rooms{missingConf > 0 && ` · ${missingConf} without confirmation #`}
+                      </div>
+                      <div className={`small tone-${hotel.tone}`}>Rooming list: {hotel.text}</div>
+                    </td>
+                  ) : (
+                    <td>
+                      <div>Host families ({p.host_families.length})</div>
+                      <div className={`small tone-${unplaced ? 'todo' : 'ok'}`}>{unplaced ? `${unplaced} not placed with a family` : 'Everyone placed'}</div>
+                    </td>
+                  )}
                   <td>
                     <div className="small">
                       {passengers(people)} passengers · {p.luggage_count ?? '?'} bags · {booked ? 'booked' : <span className="tone-todo">not booked</span>}

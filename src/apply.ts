@@ -8,7 +8,7 @@ import type { Operation, Project, Resource, ResourceContact, Vendor } from './ty
 const PROJECT_FIELDS = [
   'name', 'subtitle', 'countries', 'arrival_date', 'departure_date', 'npa_org', 'npa_address', 'npa_manager', 'npa_associate', 'billing_contact',
   'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout',
-  'home_hospitality', 'has_event', 'luggage_count', 'vehicle_notes', 'drivers', 'notes',
+  'home_hospitality', 'lodging', 'has_event', 'luggage_count', 'vehicle_notes', 'drivers', 'notes',
 ]
 const PARTICIPANT_FIELDS = ['role', 'given_name', 'family_name', 'position', 'country', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'notes']
 const RESOURCE_FIELDS = ['name', 'category', 'address', 'location', 'directions', 'description', 'website', 'notes']

@@ -14,12 +14,16 @@ export function taskDue(task: Task, project: Project | undefined): string | null
   return addDays(anchorDate(project, task.anchor), task.offset_days!)
 }
 
+export const REQUIRES_LABEL = { none: '', home_hospitality: 'Home hospitality', event: 'Event', hotel: 'Hotel stay' } as const
+
 // A task counts toward the project when enabled and its condition applies.
 export function taskApplies(task: Task, project: Project | undefined): boolean {
   if (!task.enabled) return false
   if (task.requires === 'none') return true
   if (!project) throw new Error(`Task ${task.id} has a condition but no project`)
-  return task.requires === 'home_hospitality' ? project.home_hospitality : project.has_event
+  if (task.requires === 'home_hospitality') return project.home_hospitality
+  if (task.requires === 'hotel') return project.lodging === 'hotel'
+  return project.has_event
 }
 
 export function progress(project: Project, tasks: Task[]): { done: number; total: number } {

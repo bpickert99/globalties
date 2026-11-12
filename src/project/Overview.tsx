@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
-import type { Contact, Project } from '../types'
+import type { Contact, Lodging, Project } from '../types'
 import { act, blankContact, ContactsEditor, Field, useData } from '../ui'
 
 type Hotel = Pick<Project, 'hotel_name' | 'hotel_address' | 'hotel_phone' | 'hotel_contact_name' | 'hotel_contact_email' | 'hotel_rate' | 'hotel_blurb'>
@@ -108,6 +108,12 @@ export default function Overview({ data, reload }: TabProps) {
             <input type="checkbox" checked={form.has_event} onChange={(e) => set({ has_event: e.target.checked })} /> Event
           </label>
         </div>
+        <Field label="Where the group stays">
+          <select value={form.lodging} onChange={(e) => set({ lodging: e.target.value as Lodging })}>
+            <option value="hotel">Hotel</option>
+            <option value="host_families">Host families (no hotel)</option>
+          </select>
+        </Field>
         <p className="muted small">Changing the program type does not change the existing checklist.</p>
       </section>
 
@@ -139,6 +145,7 @@ export default function Overview({ data, reload }: TabProps) {
         <ContactsEditor value={form.oiv_contacts} onChange={(oiv_contacts) => set({ oiv_contacts })} blank={blankContact} />
       </section>
 
+      {form.lodging === 'hotel' && (
       <section className="card form">
         <div className="row spread">
           <h2>Hotel</h2>
@@ -170,6 +177,7 @@ export default function Overview({ data, reload }: TabProps) {
           <textarea rows={4} value={form.hotel_blurb} onChange={(e) => set({ hotel_blurb: e.target.value })} />
         </Field>
       </section>
+      )}
 
 
       <section className="card form">

@@ -192,7 +192,26 @@ function coverPage({ project, programType, people }: ItineraryInput, logoData: A
 
 const contactLine = (c: Contact) => [c.name, c.phone, c.email].filter((s) => s.trim()).join(', ')
 
-function contactsPage({ project, staff, settings }: ItineraryInput): Paragraph[] {
+// Contacts page block for groups staying with host families: each family and its guests.
+function hostFamiliesBlock({ project, people }: ItineraryInput): Paragraph[] {
+  const active = activePeople(people)
+  return [
+    centered('Host Families:', { bold: true }),
+    ...project.host_families.flatMap((f) => {
+      const guests = active.filter((x) => f.participant_ids.includes(x.id)).map(fullName)
+      return [
+        centered(f.host, { bold: true }),
+        ...splitLines(f.address).map((l) => centered(l)),
+        ...[f.phone, f.email].filter((x) => x.trim()).map((l) => centered(l)),
+        ...(guests.length ? [centered(`Guests: ${guests.join(', ')}`, { italics: true })] : []),
+        blank(),
+      ]
+    }),
+  ]
+}
+
+function contactsPage(input: ItineraryInput): Paragraph[] {
+  const { project, staff, settings } = input
   const out: Paragraph[] = [
     p([run('Local Program by Global Ties KC', { bold: true })], {
       align: 'center',
@@ -231,7 +250,8 @@ function contactsPage({ project, staff, settings }: ItineraryInput): Paragraph[]
   }
   if (project.npa_org.trim() || project.oiv_contacts.length) out.push(blank({ rule: true }), blank())
 
-  if (project.hotel_name) {
+  if (project.lodging === 'host_families') out.push(...hostFamiliesBlock(input))
+  if (project.lodging === 'hotel' && project.hotel_name) {
     out.push(
       centered('Local Hotel:', { bold: true }),
       centered(project.hotel_name),
@@ -432,7 +452,7 @@ function itemBlock(item: ScheduleItem, input: ItineraryInput): (Paragraph | Tabl
 }
 
 function hotelWelcome(project: Project): Paragraph[] {
-  if (!project.hotel_name) return []
+  if (project.lodging !== 'hotel' || !project.hotel_name) return []
   return [
     ...labelled('Hotel:', plain([project.hotel_name, ...project.hotel_address.split('\n'), project.hotel_phone && `Phone: ${project.hotel_phone}`])),
     blank(),

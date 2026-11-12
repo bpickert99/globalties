@@ -5,7 +5,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 
 export const MODEL = 'claude-opus-5-5'
 
-export const SYSTEM_PROMPT = `You are the project assistant for Global Ties KC, a nonprofit in Kansas City that runs international exchange programs (mainly the State Department's International Visitor Leadership Program, IVLP, and fee-for-service programs such as Open World). You help one program manager run a single project: a group of international visitors spending about a week in Kansas City, with professional meetings at local organizations ("resources"), meals, cultural activities, transportation by Agenda USA, a hotel block, and sometimes home hospitality dinners with local hosts.
+export const SYSTEM_PROMPT = `You are the project assistant for Global Ties KC, a nonprofit in Kansas City that runs international exchange programs (mainly the State Department's International Visitor Leadership Program, IVLP, and fee-for-service programs such as Open World). You help one program manager run a single project: a group of international visitors spending about a week in Kansas City, with professional meetings at local organizations ("resources"), meals, cultural activities, transportation by Agenda USA, a hotel block (or, for some programs such as Open World, host families the group stays with instead), and sometimes home hospitality dinners with local hosts.
 
 The user pastes emails they receive about the project, uploads documents (project proposals, rooming lists, itineraries), and asks where things stand. Each turn you are given the current project data as JSON in a system message; treat it as the source of truth and refer to people, meetings and tasks by what it contains.
 
@@ -36,7 +36,7 @@ const OPERATION_TYPES = [
 export const PROPOSE_TOOL: Anthropic.Beta.BetaTool = {
   name: 'propose_changes',
   description: `Propose changes to the project for the user to review. Nothing is changed until the user approves each operation. Operation types and their fields:
-- update_project: data = any of name, subtitle, countries, arrival_date, departure_date, npa_org, npa_address, npa_manager {name,title,phone,email}, npa_associate {name,title,phone,email}, billing_contact ("manager"|"associate"), hotel_name, hotel_address, hotel_phone, hotel_contact_name, hotel_contact_email, hotel_rate, hotel_eta (HH:MM), hotel_checkout (HH:MM), home_hospitality (boolean), has_event (boolean), luggage_count (number), vehicle_notes, drivers [{role,name,phone}], notes.
+- update_project: data = any of name, subtitle, countries, arrival_date, departure_date, npa_org, npa_address, npa_manager {name,title,phone,email}, npa_associate {name,title,phone,email}, billing_contact ("manager"|"associate"), hotel_name, hotel_address, hotel_phone, hotel_contact_name, hotel_contact_email, hotel_rate, hotel_eta (HH:MM), hotel_checkout (HH:MM), home_hospitality (boolean: a dinner in a local home), lodging ("hotel" | "host_families": host_families when the group stays with host families instead of a hotel), has_event (boolean), luggage_count (number), vehicle_notes, drivers [{role,name,phone}], notes.
 - add_participant: data = given_name, family_name (required), role ("participant"|"interpreter"|"liaison"), position (title and organization), country, phone, email, dietary, media_consent ("yes"|"no"|"unknown"), arrival_flight, departure_flight, hotel_confirmation, bio, notes.
 - update_participant: id = participant id; data = fields to change (same as add_participant).
 - cancel_participant: id = participant id (for someone who is no longer coming).
@@ -167,6 +167,7 @@ function applies(task: Row, project: Row): boolean {
   if (!task.enabled) return false
   if (task.requires === 'home_hospitality') return project.home_hospitality === true
   if (task.requires === 'event') return project.has_event === true
+  if (task.requires === 'hotel') return project.lodging === 'hotel'
   return true
 }
 
@@ -189,7 +190,7 @@ export function buildSnapshot(s: SnapshotInput): string {
       today: s.today,
       fatigue_window_days: s.settings.fatigue_days,
       project: {
-        ...pick(p, ['id', 'name', 'subtitle', 'countries', 'accepted_on', 'arrival_date', 'departure_date', 'npa_org', 'npa_address', 'billing_contact', 'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout', 'home_hospitality', 'has_event', 'luggage_count', 'vehicle_notes', 'notes', 'closed_at']),
+        ...pick(p, ['id', 'name', 'subtitle', 'countries', 'accepted_on', 'arrival_date', 'departure_date', 'npa_org', 'npa_address', 'billing_contact', 'hotel_name', 'hotel_address', 'hotel_phone', 'hotel_contact_name', 'hotel_contact_email', 'hotel_rate', 'hotel_eta', 'hotel_checkout', 'home_hospitality', 'lodging', 'host_families', 'has_event', 'luggage_count', 'vehicle_notes', 'notes', 'closed_at']),
         program_type: s.programType,
         npa_manager: p.npa_manager,
         npa_associate: p.npa_associate,

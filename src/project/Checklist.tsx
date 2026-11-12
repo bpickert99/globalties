@@ -1,13 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { today } from '../dates'
-import { taskApplies, taskDue } from '../logic'
+import { REQUIRES_LABEL, taskApplies, taskDue } from '../logic'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
 import type { Task } from '../types'
 import { act } from '../ui'
 
-const REQUIRES_LABEL = { none: '', home_hospitality: 'Home hospitality', event: 'Event' } as const
 
 export default function Checklist({ data, reload }: TabProps) {
   const { project, tasks } = data
