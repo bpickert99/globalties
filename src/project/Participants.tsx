@@ -2,8 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { activePeople, fullName } from '../logic'
 import type { TabProps } from '../pages/Project'
 import { must, supabase } from '../supabase'
-import type { MediaConsent, Participant, ParticipantRole } from '../types'
+import type { Gender, MediaConsent, Participant, ParticipantRole } from '../types'
 import { act, Field } from '../ui'
+import GenderMark from '../GenderMark'
 
 type Draft = Omit<Participant, 'id' | 'project_id' | 'cancelled_at' | 'created_at'>
 
@@ -13,6 +14,7 @@ const BLANK: Draft = {
   family_name: '',
   position: '',
   country: '',
+  gender: '',
   phone: '',
   email: '',
   dietary: '',
@@ -51,7 +53,7 @@ export default function Participants({ data, reload }: TabProps) {
   const row = (p: Participant) => (
     <tr key={p.id} className={p.cancelled_at ? 'cancelled' : ''}>
       <td>
-        <b>{fullName(p)}</b>
+        <GenderMark gender={p.gender} /> <b>{fullName(p)}</b>
         <div className="muted small">{p.position}</div>
       </td>
       <td>{ROLE_LABEL[p.role]}</td>
@@ -208,6 +210,13 @@ function PersonForm({
         </Field>
         {text('position', form.role === 'participant' ? 'Position, organization' : 'Title on itinerary', form.role === 'participant' ? 'Program Manager, Little Fish Charity' : 'Mandarin Language Interpreter')}
         {text('country', 'Country')}
+        <Field label="Gender">
+          <select value={form.gender} onChange={(e) => set({ gender: e.target.value as Gender })}>
+            <option value="">Not recorded</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </select>
+        </Field>
         {text('phone', 'Phone')}
         {text('email', 'Email')}
         {text('dietary', 'Dietary needs', 'Vegetarian, halal, allergies…')}

@@ -37,7 +37,7 @@ export const PROPOSE_TOOL: Anthropic.Beta.BetaTool = {
   name: 'propose_changes',
   description: `Propose changes to the project for the user to review. Nothing is changed until the user approves each operation. Operation types and their fields:
 - update_project: data = any of name, subtitle, countries, arrival_date, departure_date, npa_org, npa_address, npa_manager {name,title,phone,email}, npa_associate {name,title,phone,email}, billing_contact ("manager"|"associate"), hotel_name, hotel_address, hotel_phone, hotel_contact_name, hotel_contact_email, hotel_rate, hotel_eta (HH:MM), hotel_checkout (HH:MM), home_hospitality (boolean: a dinner in a local home), lodging ("hotel" | "host_families": host_families when the group stays with host families instead of a hotel), has_event (boolean), luggage_count (number), vehicle_notes, drivers [{role,name,phone}], notes.
-- add_participant: data = given_name, family_name (required), role ("participant"|"interpreter"|"liaison"), position (title and organization), country, phone, email, dietary, media_consent ("yes"|"no"|"unknown"), arrival_flight, departure_flight, hotel_confirmation, bio, notes.
+- add_participant: data = given_name, family_name (required), role ("participant"|"interpreter"|"liaison"), position (title and organization), country, gender ("female"|"male", only when the source states it), phone, email, dietary, media_consent ("yes"|"no"|"unknown"), arrival_flight, departure_flight, hotel_confirmation, bio, notes.
 - update_participant: id = participant id; data = fields to change (same as add_participant).
 - cancel_participant: id = participant id (for someone who is no longer coming).
 - add_resource: ref = a short key you choose (e.g. "r1") so add_schedule_item can point to it in the same call; data = name (required), category ("nonprofit"|"government"|"education"|"business"|"cultural"|"media"|"health"|"faith"|"other"), address, location (building/room), directions, description (for the itinerary), website, contacts [{name,title,phone,email}], notes.
@@ -200,7 +200,7 @@ export function buildSnapshot(s: SnapshotInput): string {
         agenda_calendar_last_sent: p.transport_sent_at ?? null,
         vendor_log: p.vendor_log,
       },
-      participants: s.participants.map((x) => pick(x, ['id', 'role', 'given_name', 'family_name', 'position', 'country', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'cancelled_at'])),
+      participants: s.participants.map((x) => pick(x, ['id', 'role', 'given_name', 'family_name', 'position', 'country', 'gender', 'phone', 'email', 'dietary', 'media_consent', 'arrival_flight', 'departure_flight', 'hotel_confirmation', 'bio', 'cancelled_at'])),
       schedule: s.items.map((x) => pick(x, ['id', 'day', 'start_time', 'end_time', 'kind', 'title', 'resource_id', 'contact_ids', 'topic', 'status', 'description', 'internal_notes'])),
       resources_in_this_project: s.resources.filter((r) => usedHere.has(r.id)).map((r) => ({ ...pick(r, ['id', 'name', 'category', 'address', 'location', 'directions', 'description', 'website', 'notes']), contacts: r.contacts })),
       resource_library: s.resources.map((r) => ({ id: r.id, name: r.name, category: r.category, last_met: lastMet(r.id as string) })),

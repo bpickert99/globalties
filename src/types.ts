@@ -117,6 +117,7 @@ export type Task = {
   created_at: string
 }
 
+export type Gender = '' | 'female' | 'male'
 export type ParticipantRole = 'participant' | 'interpreter' | 'liaison'
 export type MediaConsent = 'unknown' | 'yes' | 'no'
 
@@ -128,6 +129,7 @@ export type Participant = {
   family_name: string
   position: string
   country: string
+  gender: Gender
   phone: string
   email: string
   dietary: string
