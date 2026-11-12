@@ -55,6 +55,7 @@ h3 { font-size: 1.05rem; font-weight: 600; text-transform: uppercase; letter-spa
 .topbar nav a.active { border-bottom-color: var(--brand-light); }
 .topbar .signout { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.5); }
 .topbar .signout:hover { border-color: #fff; }
+html { scrollbar-gutter: stable; } /* keep the centered layout still whether or not a page scrolls */
 main { max-width: 1200px; margin: 0 auto; padding: 24px; }
 
 /* Controls */

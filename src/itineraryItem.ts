@@ -33,7 +33,7 @@ function listed(label: string, entries: Line[][]): Block[] {
   return entries.map((lines, i) => (i === 0 ? { kind: 'field', label, lines } : { kind: 'more', lines }))
 }
 
-// Speakers print under "Speakers:"; the point of contact under "Contact:", unless they are also
+// Speakers print under "Speaker:" or "Speakers:"; the point of contact under "Contact:", unless they are also
 // speaking and the visit is set not to list them twice.
 export function visitPeople(item: ScheduleItem, resource: Resource): { contacts: ResourceContact[]; speakers: ResourceContact[] } {
   const speakers = resource.contacts.filter((c) => item.speaker_ids.includes(c.id))
@@ -54,7 +54,7 @@ function resourceBlocks(item: ScheduleItem, resource: Resource): Block[] {
   if (resource.directions.trim()) out.push({ kind: 'aside', segs: [text(resource.directions, { italic: true })] })
   const { contacts, speakers } = visitPeople(item, resource)
   out.push(...listed('Contact:', contacts.map((c) => plain([c.name, c.title, c.email, c.phone]))))
-  if (speakers.length) out.push({ kind: 'field', label: 'Speakers:', lines: speakers.map((s) => [text([s.name, s.title].filter((x) => x.trim()).join(' – '))]) })
+  if (speakers.length) out.push({ kind: 'field', label: speakers.length > 1 ? 'Speakers:' : 'Speaker:', lines: speakers.map((s) => [text([s.name, s.title].filter((x) => x.trim()).join(' – '))]) })
   return out
 }
 
