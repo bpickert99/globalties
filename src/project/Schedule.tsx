@@ -145,8 +145,13 @@ export default function Schedule({ data, reload }: TabProps) {
 
       {view === 'calendar' ? (
         <>
-          <p className="muted small">Click an empty time to add a meeting, meal, transit, cultural activity or home hospitality; click an item to edit it.</p>
-          <CalendarView project={project} items={data.items} warnings={warnings} onEdit={(i) => setEditing({ id: i.id, day: i.day })} onAdd={(day, start) => setEditing({ id: null, day, start })} />
+          <p className="muted small">Click an empty time to add a meeting, meal, transit, cultural activity or home hospitality. Click an item to edit it, drag it to another time or day, or drag its bottom edge to change when it ends.</p>
+          <CalendarView project={project} items={data.items} warnings={warnings} onEdit={(i) => setEditing({ id: i.id, day: i.day })} onAdd={(day, start) => setEditing({ id: null, day, start })}
+            onMove={async (item, move) => {
+              await act(async () => must(await supabase.from('schedule_items').update(move).eq('id', item.id)))
+              await reload()
+            }}
+          />
           {editing && (
             <div className="modal" onClick={(e) => e.target === e.currentTarget && setEditing(null)}>
               <div className="modal-body">{form(editingItem, editing.day, editing.start)}</div>

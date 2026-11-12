@@ -130,7 +130,12 @@ export default function Overview({ data, reload }: TabProps) {
           </Field>
         </div>
         <p className="muted small">Both are included on NPA emails and the itinerary.</p>
-        <h3>Office of International Visitors (State Department)</h3>
+        <h3>State Department sponsor</h3>
+        <div className="grid">
+          <Field label="Sponsoring office (itinerary: Sponsored and Administered by the …)">
+            <input value={form.sponsor_office} onChange={(e) => set({ sponsor_office: e.target.value })} placeholder="Office of International Visitors" />
+          </Field>
+        </div>
         <ContactsEditor value={form.oiv_contacts} onChange={(oiv_contacts) => set({ oiv_contacts })} blank={blankContact} />
       </section>
 

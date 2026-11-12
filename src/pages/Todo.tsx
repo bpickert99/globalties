@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type DragEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { addDays, fmtWeekdayShort, today } from '../dates'
 import { must, supabase } from '../supabase'
@@ -80,11 +80,7 @@ export default function Todo() {
         </button>
         <div className="side-head">Lists</div>
         {lists.map((l) => (
-          <label key={l.id} className="side-list">
-            <input type="checkbox" checked={l.shown} onChange={() => toggleShown(l)} />
-            <span className="side-name">{l.name}</span>
-            <span className="count">{openCount(l) || ''}</span>
-          </label>
+          <SideList key={l.id} list={l} count={openCount(l)} onToggle={() => toggleShown(l)} onChange={reload} />
         ))}
         <button className="list" onClick={createList}>
           <span>+ Create new list</span>
@@ -104,11 +100,52 @@ export default function Todo() {
   )
 }
 
+// Tasks are dragged by id; a list card or a list in the sidebar takes the drop and moves the task there.
+const TASK_MIME = 'application/x-gtkc-task'
+
+function useTaskDrop(listId: string | undefined, onChange: () => Promise<void>) {
+  const [over, setOver] = useState(false)
+  if (!listId) return { over: false, handlers: {} }
+  const accepts = (e: DragEvent) => e.dataTransfer.types.includes(TASK_MIME)
+  return {
+    over,
+    handlers: {
+      onDragOver: (e: DragEvent) => {
+        if (!accepts(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        setOver(true)
+      },
+      onDragLeave: () => setOver(false),
+      onDrop: async (e: DragEvent) => {
+        if (!accepts(e)) return
+        e.preventDefault()
+        setOver(false)
+        const id = e.dataTransfer.getData(TASK_MIME)
+        await act(async () => must(await supabase.from('tasks').update({ list_id: listId }).eq('id', id)))
+        await onChange()
+      },
+    },
+  }
+}
+
+function SideList({ list, count, onToggle, onChange }: { list: TaskList; count: number; onToggle: () => void; onChange: () => Promise<void> }) {
+  const drop = useTaskDrop(list.id, onChange)
+  return (
+    <label className={drop.over ? 'side-list drop-over' : 'side-list'} {...drop.handlers}>
+      <input type="checkbox" checked={list.shown} onChange={onToggle} />
+      <span className="side-name">{list.name}</span>
+      <span className="count">{count || ''}</span>
+    </label>
+  )
+}
+
 function ListCard({ list, title, tasks, lists, onChange }: { list?: TaskList; title: string; tasks: Task[]; lists: TaskList[]; onChange: () => Promise<void> }) {
   const [adding, setAdding] = useState(false)
   const [showDone, setShowDone] = useState(false)
   const [menu, setMenu] = useState(false)
   const done = tasks.filter((t) => t.done_at).sort((a, b) => b.done_at!.localeCompare(a.done_at!))
+  const drop = useTaskDrop(list?.id, onChange)
 
   async function rename() {
     if (!list) return
@@ -125,7 +162,7 @@ function ListCard({ list, title, tasks, lists, onChange }: { list?: TaskList; ti
   }
 
   return (
-    <div className="gcard">
+    <div className={drop.over ? 'gcard drop-over' : 'gcard'} {...drop.handlers}>
       <div className="gcard-head">
         <h2>{title}</h2>
         {list && (
@@ -187,7 +224,15 @@ function TaskRow({ task, lists, onChange }: { task: Task; lists: TaskList[]; onC
   if (editing) return <TaskEditor task={task} listId={task.list_id!} lists={lists} onDone={() => setEditing(false)} onSaved={onChange} />
 
   return (
-    <div className={task.done_at ? 'gtask done' : 'gtask'}>
+    <div
+      className={task.done_at ? 'gtask done' : 'gtask'}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(TASK_MIME, task.id)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      title="Drag to another list to move it"
+    >
       <button className="check" onClick={() => update({ done_at: task.done_at ? null : new Date().toISOString() })} aria-label={task.done_at ? 'Mark not done' : 'Mark done'}>
         {task.done_at ? '✓' : ''}
       </button>

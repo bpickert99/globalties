@@ -212,6 +212,8 @@ main.in-project { max-width: 1400px; }
 .side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gtasks-board { display: flex; gap: 14px; overflow-x: auto; align-items: flex-start; padding-bottom: 8px; }
 .gcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 300px; max-width: 360px; flex: 1 0 300px; }
+.gcard.drop-over, .side-list.drop-over { outline: 2px dashed var(--brand); outline-offset: 2px; background: #eef3f9; }
+.gtask[draggable] { cursor: grab; }
 .gcard-head { display: flex; justify-content: space-between; align-items: center; }
 .gcard-head h2 { margin: 0; font-weight: 500; font-size: 1.05rem; }
 .icon-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 2px 8px; border-radius: 50%; color: var(--muted); }
@@ -283,8 +285,6 @@ tr.divider td { background: #f7f8fa; font-weight: 600; color: var(--muted); font
 .phase { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); font-weight: 700; margin: 10px 0 6px; }
 
 /* Monday */
-.monday .card { margin-bottom: 14px; }
-.monday h2 a { text-decoration: none; }
 .mm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 20px; }
 .mm-list ul { margin: 0; padding-left: 18px; font-size: 0.92rem; }
 .mm-list li { margin: 3px 0; }
@@ -310,6 +310,9 @@ tr.divider td { background: #f7f8fa; font-weight: 600; color: var(--muted); font
 .cal-line { position: absolute; left: 0; right: 0; border-top: 1px solid #eef1f5; pointer-events: none; }
 .cal-item { position: absolute; font: inherit; text-align: left; border: none; border-left: 4px solid var(--line); background: #eef3f9; border-radius: 6px; padding: 3px 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 .cal-item:hover { filter: brightness(0.97); z-index: 3; }
+.cal-item { touch-action: none; user-select: none; }
+.cal-item.dragging { z-index: 4; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); cursor: grabbing; opacity: 0.9; }
+.cal-resize { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: ns-resize; }
 .cal-time { font-size: 0.68rem; color: var(--muted); }
 .cal-title { font-size: 0.78rem; font-weight: 600; line-height: 1.2; }
 .cal-item.kind-meeting { border-left-color: var(--brand); background: #e8eef7; }
@@ -389,7 +392,7 @@ table.board td > div + div { margin-top: 3px; }
   .savebar { top: 58px; }
 }
 
-/* Print (Monday Meeting) */
+/* Print */
 @media print {
   .topbar, .no-print { display: none !important; }
   body, :root { background: #fff; }

@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useMatch } from 'react-router-dom'
 import Login, { NewPassword } from './pages/Login'
 import Logistics from './pages/Logistics'
-import Monday from './pages/Monday'
 import ProjectPage from './pages/Project'
 import Projects from './pages/Projects'
 import Resources from './pages/Resources'
@@ -79,9 +78,6 @@ export default function App() {
           <NavLink to="/todo">To-Do</NavLink>
           <NavLink to="/projects">Projects</NavLink>
           <NavLink to="/resources">Resources</NavLink>
-          <NavLink to="/monday">
-            Monday<span className="long"> Meeting</span>
-          </NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
         )}
@@ -96,7 +92,6 @@ export default function App() {
           <Route path="/projects/:id/*" element={<ProjectPage />} />
           <Route path="/resources" element={<Resources />} />
           <Route path="/logistics" element={<Logistics />} />
-          <Route path="/monday" element={<Monday />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/todo" replace />} />
         </Routes>

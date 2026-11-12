@@ -68,6 +68,7 @@ export type Project = {
   npa_associate: Contact
   npa_address: string
   billing_contact: 'manager' | 'associate'
+  sponsor_office: string
   oiv_contacts: Contact[]
   hotel_name: string
   hotel_address: string

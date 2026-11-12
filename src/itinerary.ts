@@ -1,20 +1,32 @@
-// Builds an editable Word itinerary in the layout of the GTKC itineraries:
-// cover + participants, contacts page, week-at-a-glance grid, day-by-day detail.
+// Builds the editable Word itinerary in the GTKC layout, taken from the office's own
+// itineraries (e.g. 26.9 China American Philanthropy, 26.11 Quad Ports):
+// cover with logo and participants, contacts page, program-at-a-glance grid, then day by day.
+// Times New Roman 12 pt throughout; labels at the margin, values on a 1.5" tab.
 
 import {
   AlignmentType,
   BorderStyle,
   Document,
-  Header,
+  Footer,
+  HorizontalPositionAlign,
+  HorizontalPositionRelativeFrom,
+  ImageRun,
   Packer,
   PageNumber,
   Paragraph,
+  Tab,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
+  TabStopType,
   TextRun,
+  TextWrappingType,
+  UnderlineType,
+  VerticalPositionRelativeFrom,
   WidthType,
 } from 'docx'
+import logoUrl from './assets/gtkc-logo.png'
 import { dayRange, fmtLong, fmtRange, fmtTimeRange, parseDate } from './dates'
 import { activePeople, fullName, sortItems } from './logic'
 import { resourceOf, visitContacts } from './resources'
@@ -30,180 +42,411 @@ export type ItineraryInput = {
   settings: Settings
 }
 
-const FONT = 'Calibri'
-const PAGE_WIDTH = 9360 // twips of text width on Letter with 1" margins
-const LABEL_WIDTH = 2400
+const FONT = 'Times New Roman'
+const VALUE_TAB = 2160 // 1.5": where values sit after "Location:", times, etc.
+const NAME_TAB = 2880 // 2": participant names on the cover
+const GRID_WIDTH = 10705 // the at-a-glance table runs a little into the side margins
+const RULE = { style: BorderStyle.SINGLE, size: 4, color: 'auto', space: 1 }
+const BOX = { style: BorderStyle.SINGLE, size: 4, color: 'auto' }
+const BOX_BORDERS = { top: BOX, bottom: BOX, left: BOX, right: BOX }
 
-const NONE = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
-const NO_BORDERS = { top: NONE, bottom: NONE, left: NONE, right: NONE, insideHorizontal: NONE, insideVertical: NONE }
-const LINE = { style: BorderStyle.SINGLE, size: 4, color: '808080' }
-const GRID_BORDERS = { top: LINE, bottom: LINE, left: LINE, right: LINE, insideHorizontal: LINE, insideVertical: LINE }
+type RunOpts = {
+  bold?: boolean
+  italics?: boolean
+  underline?: boolean
+  size?: number
+}
+type Run = TextRun
 
-type RunOpts = { bold?: boolean; italics?: boolean; size?: number; underline?: boolean }
+function run(text: string, o: RunOpts = {}): Run {
+  return new TextRun({
+    text,
+    bold: o.bold,
+    italics: o.italics,
+    size: o.size,
+    underline: o.underline ? { type: UnderlineType.SINGLE } : undefined,
+  })
+}
 
-function para(text: string, o: RunOpts & { align?: 'center'; after?: number; before?: number; pageBreak?: boolean } = {}): Paragraph {
+function tab(o: RunOpts = {}): Run {
+  return new TextRun({ children: [new Tab()], bold: o.bold, size: o.size })
+}
+
+type ParaOpts = {
+  align?: 'center' | 'both'
+  left?: number
+  hanging?: number
+  tabAt?: number
+  rule?: boolean
+  pageBreak?: boolean
+}
+
+function p(runs: Run[] = [], o: ParaOpts = {}): Paragraph {
   return new Paragraph({
-    children: text.split('\n').map((line, i) => new TextRun({ text: line, break: i > 0 ? 1 : undefined, font: FONT, size: o.size ?? 22, bold: o.bold, italics: o.italics, underline: o.underline ? {} : undefined })),
-    alignment: o.align === 'center' ? AlignmentType.CENTER : undefined,
-    spacing: { after: o.after ?? 0, before: o.before ?? 0 },
+    children: runs,
+    alignment: o.align === 'center' ? AlignmentType.CENTER : o.align === 'both' ? AlignmentType.JUSTIFIED : undefined,
+    indent: o.left !== undefined ? { left: o.left, hanging: o.hanging } : undefined,
+    tabStops: o.tabAt !== undefined ? [{ type: TabStopType.LEFT, position: o.tabAt }] : undefined,
+    border: o.rule ? { bottom: RULE } : undefined,
     pageBreakBefore: o.pageBreak,
   })
 }
 
-function lines(texts: string[], o: RunOpts = {}): Paragraph[] {
-  return texts.filter((t) => t.trim()).map((t) => para(t, o))
+const blank = (o: ParaOpts = {}) => p([], o)
+const centered = (text: string, o: RunOpts = {}) => p([run(text, o)], { align: 'center' })
+const splitLines = (text: string) =>
+  text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+// "Label:<tab>first line" then the remaining lines lined up under the first, at 1.5".
+function labelled(label: string, lines: Run[][], labelOpts: RunOpts = {}): Paragraph[] {
+  return lines.map((runs, i) =>
+    i === 0
+      ? p([run(label, labelOpts), tab(), ...runs], {
+          left: VALUE_TAB,
+          hanging: VALUE_TAB,
+          tabAt: VALUE_TAB,
+        })
+      : p(runs, { left: VALUE_TAB }),
+  )
 }
 
-function cell(children: Paragraph[], width: number): TableCell {
-  return new TableCell({ children: children.length ? children : [para('')], width: { size: width, type: WidthType.DXA } })
+const plain = (texts: string[]): Run[][] => texts.filter((t) => t.trim()).map((t) => [run(t)])
+
+// Italic paragraph indented to the value column, as used for topics, directions and blurbs.
+function indentedItalic(runs: Run[]): Paragraph {
+  return p(runs, { left: VALUE_TAB, align: 'both' })
 }
 
-// Borderless two-column "Label:   value" block, as used throughout the itineraries.
-function labelled(rows: [string, Paragraph[]][], labelWidth = LABEL_WIDTH): Table {
-  return new Table({
-    width: { size: PAGE_WIDTH, type: WidthType.DXA },
-    columnWidths: [labelWidth, PAGE_WIDTH - labelWidth],
-    borders: NO_BORDERS,
-    rows: rows.map(
-      ([label, content]) =>
-        new TableRow({ children: [cell([para(label)], labelWidth), cell([...content, para('', { size: 12 })], PAGE_WIDTH - labelWidth)] }),
-    ),
+// ---- Cover -----------------------------------------------------------------
+
+function logo(data: ArrayBuffer): Paragraph {
+  return new Paragraph({
+    children: [
+      new ImageRun({
+        type: 'png',
+        data,
+        transformation: { width: 215, height: 41 },
+        floating: {
+          horizontalPosition: {
+            relative: HorizontalPositionRelativeFrom.MARGIN,
+            align: HorizontalPositionAlign.CENTER,
+          },
+          verticalPosition: {
+            relative: VerticalPositionRelativeFrom.PARAGRAPH,
+            offset: -276225,
+          },
+          wrap: { type: TextWrappingType.NONE },
+        },
+      }),
+    ],
   })
 }
 
-function coverPage({ project, programType, people }: ItineraryInput): (Paragraph | Table)[] {
+const ROLE_LABELS = {
+  interpreter: 'Interpreter',
+  liaison: 'International Visitor Liaison',
+  participant: '',
+} as const
+
+function coverPage({ project, programType, people }: ItineraryInput, logoData: ArrayBuffer): Paragraph[] {
   const active = activePeople(people)
-  const participants = active.filter((p) => p.role === 'participant')
-  const escorts = active.filter((p) => p.role !== 'participant')
-  const multiCountry = new Set(participants.map((p) => p.country)).size > 1
-  const out: (Paragraph | Table)[] = [
-    para(project.name, { bold: true, size: 36, align: 'center', before: 1200 }),
-    para(project.subtitle, { size: 26, align: 'center', before: 120 }),
-    para(fmtRange(project.arrival_date, project.departure_date), { size: 26, align: 'center', before: 240, after: 480 }),
-    para(programType.itinerary_intro, { after: 360 }),
+  const participants = active.filter((x) => x.role === 'participant')
+  const escorts = active.filter((x) => x.role !== 'participant')
+  const multiCountry = new Set(participants.map((x) => x.country)).size > 1
+  // Large groups are set in 9 pt so the roster stays on the cover, as in the WHA and EUR itineraries.
+  const size = participants.length > 12 ? 18 : undefined
+  const twoCol = { left: NAME_TAB, hanging: NAME_TAB, tabAt: NAME_TAB }
+
+  const out: Paragraph[] = [
+    logo(logoData),
+    blank(),
+    centered(project.name, { bold: true, size: 28 }),
+    ...(project.subtitle ? [centered(project.subtitle, { bold: true })] : []),
+    blank(),
+    centered(fmtRange(project.arrival_date, project.departure_date).replace(' - ', '-'), { italics: true }),
+    blank(),
+    centered(programType.itinerary_intro, { italics: true, size: 22 }),
+    blank(),
   ]
-  const participantRows = participants.map((p, i): [string, Paragraph[]] => [
-    i === 0 ? 'Participants:' : '',
-    [para(multiCountry && p.country ? `${fullName(p)} (${p.country})` : fullName(p), { bold: true }), ...lines([p.position])],
-  ])
-  const escortRows = escorts.map((p, i): [string, Paragraph[]] => [
-    i === 0 ? 'Accompanied By:' : '',
-    [para([fullName(p), p.position].filter(Boolean).join(', '))],
-  ])
-  if (participantRows.length + escortRows.length) out.push(labelled([...participantRows, ...escortRows]))
+  if (participants.length) {
+    out.push(p([run('Participants:', { bold: true, underline: true, size })]), blank())
+    participants.forEach((x, i) => {
+      const country = multiCountry || i === 0 ? x.country : ''
+      out.push(p([run(country, { bold: true, size }), tab({ size }), run(fullName(x), { bold: true, size })], twoCol))
+      for (const line of splitLines(x.position)) out.push(p([run(line, { size })], { left: NAME_TAB }))
+      out.push(blank())
+    })
+  }
+  escorts.forEach((x, i) => {
+    const role = x.position.trim() || ROLE_LABELS[x.role]
+    const who = [run(fullName(x), { bold: true, size }), ...(role ? [run(`, ${role}`, { size })] : [])]
+    out.push(i === 0 ? p([run('Accompanied By:', { bold: true, underline: true, size }), tab({ size }), ...who], twoCol) : p(who, { left: NAME_TAB }))
+  })
   return out
 }
+
+// ---- Contacts page -----------------------------------------------------------
+
+const contactLine = (c: Contact) => [c.name, c.phone, c.email].filter((s) => s.trim()).join(', ')
 
 function contactsPage({ project, staff, settings }: ItineraryInput): Paragraph[] {
-  const out: Paragraph[] = [para('Local Program by Global Ties KC', { bold: true, pageBreak: true }), ...lines(settings.office_address.split('\n')), para('')]
+  const out: Paragraph[] = [
+    p([run('Local Program by Global Ties KC', { bold: true })], {
+      align: 'center',
+      pageBreak: true,
+    }),
+    ...splitLines(settings.office_address).map((l) => centered(l)),
+  ]
   for (const s of staff) {
     out.push(
-      para(`${s.name}, ${s.title}`, { bold: true }),
-      ...lines([s.office_phone && `${s.office_phone} (Office)`, s.mobile_phone && `${s.emergency_contact ? 'Emergency Contact: ' : ''}${s.mobile_phone} (Mobile)`, s.email]),
-      para(''),
+      blank(),
+      centered([s.name, s.title].filter(Boolean).join(', '), { bold: true }),
+      ...[
+        s.office_phone && `${s.office_phone} (Office)`,
+        s.mobile_phone && `${s.emergency_contact ? 'Emergency Contact: ' : ''}${s.mobile_phone} (Mobile)`,
+        s.email,
+      ]
+        .filter(Boolean)
+        .map((l) => centered(l)),
     )
   }
+  out.push(blank({ rule: true }), blank())
+
   const npaTeam = [project.npa_manager, project.npa_associate].filter((c) => c.name.trim())
-  if (project.npa_org || npaTeam.length) {
-    out.push(para(`Administered by ${project.npa_org}`, { bold: true }))
-    out.push(...lines(npaTeam.map((c) => [c.name, c.phone, c.email].filter(Boolean).join(', '))), para(''))
+  if (project.npa_org.trim()) {
+    out.push(centered(`Administered by ${project.npa_org}`, { bold: true }), ...npaTeam.map((c) => centered(contactLine(c))))
   }
   if (project.oiv_contacts.length) {
+    if (project.npa_org.trim()) out.push(blank())
     out.push(
-      para('Sponsored and Administered by the Office of International Visitors and U.S. Speaker Program, Bureau of Educational and Cultural Affairs, U.S. Department of State', { bold: true }),
-      ...lines(project.oiv_contacts.map((c) => [c.name, c.phone, c.email].filter(Boolean).join(', '))),
-      para(''),
+      centered(`Sponsored and Administered by the ${project.sponsor_office}`, {
+        bold: true,
+      }),
+      centered('Bureau of Educational and Cultural Affairs, U.S. Department of State', { bold: true }),
+      ...project.oiv_contacts.map((c) => centered(contactLine(c))),
     )
   }
+  if (project.npa_org.trim() || project.oiv_contacts.length) out.push(blank({ rule: true }), blank())
+
   if (project.hotel_name) {
-    out.push(para('Local Hotel:', { bold: true }), ...lines([project.hotel_name, project.hotel_address, project.hotel_phone && `Telephone: ${project.hotel_phone}`]), para(''))
+    out.push(
+      centered('Local Hotel:', { bold: true }),
+      centered(project.hotel_name),
+      ...splitLines(project.hotel_address).map((l) => centered(l)),
+      ...(project.hotel_phone ? [centered(`Phone: ${project.hotel_phone}`)] : []),
+      blank(),
+    )
   }
-  if (settings.transport_block) {
-    out.push(para('Local Transportation:', { bold: true }), ...lines(settings.transport_block.split('\n')), para(''))
+  if (settings.transport_block.trim()) {
+    out.push(centered('Local Transportation:', { bold: true }), ...splitLines(settings.transport_block).map((l) => centered(l)), blank())
   }
   for (const d of project.drivers.filter((x) => x.name.trim())) {
-    out.push(para(`${d.role.trim() || 'Driver'}:`, { bold: true }), ...lines([d.name, d.phone]), para(''))
+    out.push(centered(`${d.role.trim() || 'Driver'}:`, { bold: true }), centered(d.name), ...(d.phone ? [centered(d.phone)] : []), blank())
   }
   return out
 }
 
-function gridSummary(item: ScheduleItem): string[] {
-  return [fmtTimeRange(item.start_time, item.end_time), item.title].filter(Boolean)
+// ---- Program at a glance -----------------------------------------------------
+
+const GRID_SIZE = 18 // 9 pt
+
+function gridCell(dayItems: ScheduleItem[]): Paragraph[] {
+  const out: Paragraph[] = []
+  for (const item of dayItems) {
+    if (item.kind === 'note')
+      out.push(
+        p([run(item.title, { italics: true, size: GRID_SIZE })], {
+          align: 'center',
+        }),
+        blank({ align: 'center' }),
+      )
+  }
+  for (const item of dayItems.filter((i) => i.kind !== 'note')) {
+    const time = fmtTimeRange(item.start_time, item.end_time)
+    if (time) out.push(p([run(time, { size: GRID_SIZE })], { align: 'center' }))
+    out.push(
+      p([run(item.title, { bold: true, size: GRID_SIZE })], {
+        align: 'center',
+      }),
+      blank({ align: 'center' }),
+    )
+  }
+  return out.length ? out : [blank()]
 }
 
-// Week-at-a-glance: one row of up to 7 day columns per week of the program.
 function gridPage({ project, items }: ItineraryInput): (Paragraph | Table)[] {
   const days = dayRange(project.arrival_date, project.departure_date)
   const sorted = sortItems(items)
-  const out: (Paragraph | Table)[] = [para(fmtRange(project.arrival_date, project.departure_date), { bold: true, align: 'center', pageBreak: true, after: 240 })]
-  for (let w = 0; w < days.length; w += 7) {
-    const week = days.slice(w, w + 7)
-    const colWidth = Math.floor(PAGE_WIDTH / week.length)
-    const head = new TableRow({
-      tableHeader: true,
-      children: week.map((d) => {
-        const date = parseDate(d)
-        return cell([para(date.toLocaleDateString('en-US', { weekday: 'long' }), { bold: true, size: 15, align: 'center' }), para(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), { bold: true, size: 15, align: 'center' })], colWidth)
-      }),
-    })
-    const body = new TableRow({
-      children: week.map((d) =>
-        cell(
-          sorted.filter((i) => i.day === d).flatMap((i) => [...gridSummary(i).map((t) => para(t, { size: 16 })), para('', { size: 10 })]),
-          colWidth,
-        ),
-      ),
-    })
-    out.push(new Table({ width: { size: PAGE_WIDTH, type: WidthType.DXA }, columnWidths: week.map(() => colWidth), borders: GRID_BORDERS, rows: [head, body] }), para(''))
-  }
+  const colWidth = Math.floor(GRID_WIDTH / days.length)
+  const head = new TableRow({
+    tableHeader: true,
+    children: days.map((d) => {
+      const date = parseDate(d)
+      return new TableCell({
+        width: { size: colWidth, type: WidthType.DXA },
+        children: [
+          p(
+            [
+              run(date.toLocaleDateString('en-US', { weekday: 'long' }), {
+                size: GRID_SIZE,
+              }),
+            ],
+            { align: 'center' },
+          ),
+          p(
+            [
+              run(
+                date.toLocaleDateString('en-US', {
+                  month: 'long',
+                  day: 'numeric',
+                }),
+                { size: GRID_SIZE },
+              ),
+            ],
+            { align: 'center' },
+          ),
+        ],
+      })
+    }),
+  })
+  const body = new TableRow({
+    children: days.map(
+      (d) =>
+        new TableCell({
+          width: { size: colWidth, type: WidthType.DXA },
+          children: gridCell(sorted.filter((i) => i.day === d)),
+        }),
+    ),
+  })
+  return [
+    blank({ align: 'center', pageBreak: true }),
+    blank({ align: 'center' }),
+    centered(fmtRange(project.arrival_date, project.departure_date).replace(' - ', '-'), { bold: true, size: 44 }),
+    blank({ align: 'center' }),
+    blank({ align: 'center' }),
+    new Table({
+      width: { size: colWidth * days.length, type: WidthType.DXA },
+      columnWidths: days.map(() => colWidth),
+      layout: TableLayoutType.FIXED,
+      alignment: AlignmentType.CENTER,
+      borders: { ...BOX_BORDERS, insideHorizontal: BOX, insideVertical: BOX },
+      rows: [head, body],
+    }),
+  ]
+}
+
+// ---- Day by day --------------------------------------------------------------
+
+// Organization blurbs open with the organization's name in bold, e.g. "**Nonprofit Connect** is a regional ...".
+function blurb(text: string, name: string): Paragraph {
+  const lead = [name, `The ${name}`].find((n) => n && text.startsWith(n))
+  return indentedItalic(lead ? [run(lead, { bold: true, italics: true }), run(text.slice(lead.length), { italics: true })] : [run(text, { italics: true })])
+}
+
+function contactBlock(contacts: Contact[]): Paragraph[] {
+  return contacts.flatMap((c, i) => {
+    const lines = plain([c.name, c.title, c.email, c.phone])
+    const paras = i === 0 ? labelled('Contact:', lines) : lines.map((r) => p(r, { left: VALUE_TAB }))
+    return i < contacts.length - 1 ? [...paras, blank()] : paras
+  })
+}
+
+function resourceBlock(item: ScheduleItem, resource: Resource): Paragraph[] {
+  const out: Paragraph[] = []
+  const where = plain([resource.location, ...resource.address.split('\n')])
+  if (where.length) out.push(...labelled('Location:', where), blank())
+  if (resource.directions.trim()) out.push(indentedItalic([run(resource.directions, { italics: true })]), blank())
+  const contacts = visitContacts(item, resource)
+  if (contacts.length) out.push(...contactBlock(contacts), blank())
   return out
 }
 
-function contactParagraphs(contacts: Contact[]): Paragraph[] {
-  return contacts.flatMap((c) => [...lines([c.name, c.title, c.email, c.phone]), para('', { size: 12 })])
+function restaurantBlock(item: ScheduleItem): Paragraph[] {
+  const label = item.restaurants.length > 1 ? 'Recommendations:' : 'Recommendation:'
+  return item.restaurants.flatMap((r, i) => {
+    const lines: Run[][] = [...plain([r.name, r.address]), ...(r.description.trim() ? [[run(r.description, { italics: true })]] : [])]
+    const paras = i === 0 ? labelled(label, lines) : lines.map((x) => p(x, { left: VALUE_TAB }))
+    return [...paras, blank()]
+  })
 }
 
-// Where / who / what for a visit to a resource.
-function resourceRows(item: ScheduleItem, resource: Resource): [string, Paragraph[]][] {
-  const rows: [string, Paragraph[]][] = []
-  const where = [resource.location, resource.address].filter(Boolean).join('\n')
-  if (where) rows.push(['Location:', [para(where), ...(resource.directions ? [para(''), para(resource.directions)] : [])]])
-  else if (resource.directions) rows.push(['', [para(resource.directions)]])
-  const contacts = visitContacts(item, resource)
-  if (contacts.length) rows.push(['Contact:', contactParagraphs(contacts)])
-  if (item.topic) rows.push(['Topic:', [para(item.topic)]])
-  if (resource.description) rows.push(['', [para(resource.description)]])
-  return rows
+function hostGroupBox(n: number, names: string[], g: ScheduleItem['hh_groups'][number]): Table {
+  const bold = { bold: true }
+  const children: Paragraph[] = [
+    ...labelled(
+      `Group ${n}:`,
+      (names.length ? names : ['']).map((x) => [run(x, bold)]),
+      bold,
+    ),
+    blank(),
+    ...labelled('Location:', plain(g.address.split('\n')), bold),
+    blank(),
+    ...labelled('Contact:', plain([g.host, g.phone, g.email]), bold),
+    ...(g.bio.trim() ? [blank(), ...splitLines(g.bio).map((l) => p([run(l, { italics: true })], { align: 'both' }))] : []),
+  ]
+  return new Table({
+    width: { size: 9350, type: WidthType.DXA },
+    columnWidths: [9350],
+    borders: BOX_BORDERS,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 9350, type: WidthType.DXA },
+            children,
+          }),
+        ],
+      }),
+    ],
+  })
+}
+
+function homeHospitality(item: ScheduleItem, people: Participant[]): (Paragraph | Table)[] {
+  const active = activePeople(people)
+  return item.hh_groups.flatMap((g, i) => {
+    const names = active
+      .filter((x) => g.participant_ids.includes(x.id))
+      .map((x) => `${fullName(x)} (${x.role === 'participant' ? x.country : ROLE_LABELS[x.role]})`)
+    return [hostGroupBox(i + 1, names, g), blank()]
+  })
 }
 
 function itemBlock(item: ScheduleItem, input: ItineraryInput): (Paragraph | Table)[] {
-  if (item.kind === 'note') return [para(item.title, { italics: true, after: 160 })]
+  if (item.kind === 'note') return [p([run(item.title, { italics: true })]), blank()]
   const time = fmtTimeRange(item.start_time, item.end_time)
-  const rows: [string, Paragraph[]][] = [[time, [para(item.title, { bold: true })]]]
-  if (item.resource_id) rows.push(...resourceRows(item, resourceOf(item, input.resources)))
-  else if (item.description) rows.push(['', [para(item.description)]])
-  item.restaurants.forEach((r, i) => rows.push([i === 0 ? 'Recommendation:' : '', lines([r.name, r.address, r.description])]))
-  if (item.kind === 'home_hospitality') {
-    const people = activePeople(input.people)
-    item.hh_groups.forEach((g, i) => {
-      const names = people
-        .filter((p) => g.participant_ids.includes(p.id))
-        .map((p) => (p.role === 'participant' ? fullName(p) : `${fullName(p)} (${p.role === 'interpreter' ? 'Interpreter' : 'Liaison'})`))
-      rows.push([`Group ${i + 1}:`, lines(names)])
-      rows.push(['Location:', lines([g.address])])
-      rows.push(['Contact:', lines([g.host, [g.phone, g.email].filter(Boolean).join('; ')])])
-      if (g.bio) rows.push(['', [para(g.bio)]])
-    })
-  }
-  return [labelled(rows)]
+  const out: (Paragraph | Table)[] = [
+    p([run(time, { bold: true }), tab({ bold: true }), run(item.title, { bold: true })], { left: VALUE_TAB, hanging: VALUE_TAB, tabAt: VALUE_TAB }),
+    blank(),
+  ]
+  const resource = item.resource_id ? resourceOf(item, input.resources) : null
+  if (resource) out.push(...resourceBlock(item, resource))
+  if (item.topic.trim()) out.push(indentedItalic([run(`Topic: ${item.topic}`, { italics: true })]), blank())
+  if (item.description.trim()) out.push(...splitLines(item.description).flatMap((l) => [indentedItalic([run(l, { italics: true })]), blank()]))
+  if (resource?.description.trim()) out.push(blurb(resource.description.trim(), resource.name), blank())
+  out.push(...restaurantBlock(item))
+  if (item.kind === 'home_hospitality') out.push(...homeHospitality(item, input.people))
+  return out
 }
 
-function hotelWelcome(project: Project): (Paragraph | Table)[] {
+function hotelWelcome(project: Project): Paragraph[] {
   if (!project.hotel_name) return []
   return [
-    labelled([['Hotel:', lines([project.hotel_name, project.hotel_address])]]),
-    para('Welcome to Kansas City!', { bold: true, before: 120, after: 120 }),
-    ...(project.hotel_blurb ? [para(project.hotel_blurb, { after: 200 })] : []),
+    ...labelled('Hotel:', plain([project.hotel_name, ...project.hotel_address.split('\n'), project.hotel_phone && `Phone: ${project.hotel_phone}`])),
+    blank(),
+    centered('Welcome to Kansas City!', {
+      bold: true,
+      italics: true,
+      size: 32,
+    }),
+    blank(),
+    ...project.hotel_blurb
+      .split(/\n\s*\n/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .flatMap((x) => [p([run(x)], { align: 'both' }), blank()]),
   ]
 }
 
@@ -211,20 +454,40 @@ function detailPages(input: ItineraryInput): (Paragraph | Table)[] {
   const { project } = input
   const sorted = sortItems(input.items)
   const out: (Paragraph | Table)[] = []
-  const days = dayRange(project.arrival_date, project.departure_date)
-  days.forEach((day, n) => {
+  dayRange(project.arrival_date, project.departure_date).forEach((day, n) => {
     const dayItems = sorted.filter((i) => i.day === day)
-    out.push(para(fmtLong(day), { bold: true, underline: true, size: 24, pageBreak: n === 0, before: n === 0 ? 0 : 240, after: 160 }))
+    // Two lines down the page before the first day, one blank line between days.
+    out.push(...(n === 0 ? [blank({ pageBreak: true }), blank()] : [blank()]))
+    out.push(p([run(fmtLong(day), { bold: true })], { rule: true }), blank())
     const lastMeeting = dayItems.map((i) => i.kind).lastIndexOf('meeting')
-    const firstFlight = day === project.arrival_date ? dayItems.findIndex((i) => i.kind === 'flight') : -2
+    const firstFlight = n === 0 ? dayItems.findIndex((i) => i.kind === 'flight') : -2
     if (firstFlight === -1) out.push(...hotelWelcome(project))
     dayItems.forEach((item, i) => {
       out.push(...itemBlock(item, input))
       if (i === firstFlight) out.push(...hotelWelcome(project))
-      if (i === lastMeeting) out.push(para('**Your professional meetings are concluded for the day**', { bold: true, align: 'center', before: 120, after: 200 }))
+      if (i === lastMeeting)
+        out.push(
+          p(
+            [
+              run('**Your professional meetings are concluded for the day**', {
+                bold: true,
+                italics: true,
+              }),
+            ],
+            { left: VALUE_TAB },
+          ),
+          blank(),
+        )
     })
   })
-  out.push(para('We hope you enjoyed your time in the Heartland of America!', { bold: true, align: 'center', before: 360 }))
+  out.push(
+    blank(),
+    centered('We hope you enjoyed your time in the Heartland of America!', {
+      bold: true,
+      italics: true,
+      size: 32,
+    }),
+  )
   return out
 }
 
@@ -236,22 +499,58 @@ export function itineraryFileName(project: Project): string {
   return `${[yearMonth, safe(project.countries), safe(project.name), 'Itinerary'].filter(Boolean).join('_')}.docx`
 }
 
-export function buildItinerary(input: ItineraryInput): Document {
+export function buildItinerary(input: ItineraryInput, logoData: ArrayBuffer): Document {
   return new Document({
     creator: 'Global Ties KC',
     title: `${input.project.name} Itinerary`,
+    styles: {
+      default: {
+        document: {
+          run: { font: FONT, size: 24 },
+          paragraph: { spacing: { after: 0, line: 240 } },
+        },
+      },
+    },
     sections: [
       {
-        properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
-        headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: 20 })] })] }) },
-        children: [...coverPage(input), ...contactsPage(input), ...gridPage(input), ...detailPages(input)],
+        properties: {
+          page: {
+            margin: {
+              top: 1440,
+              bottom: 1440,
+              left: 1440,
+              right: 1440,
+              header: 1080,
+              footer: 720,
+            },
+          },
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    children: [PageNumber.CURRENT],
+                    font: 'Calibri',
+                    size: 22,
+                  }),
+                ],
+              }),
+            ],
+          }),
+        },
+        children: [...coverPage(input, logoData), ...contactsPage(input), ...gridPage(input), ...detailPages(input)],
       },
     ],
   })
 }
 
 export async function downloadItinerary(input: ItineraryInput): Promise<void> {
-  const blob = await Packer.toBlob(buildItinerary(input))
+  const res = await fetch(logoUrl)
+  if (!res.ok) throw new Error(`Could not load the GTKC logo (${res.status})`)
+  const blob = await Packer.toBlob(buildItinerary(input, await res.arrayBuffer()))
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

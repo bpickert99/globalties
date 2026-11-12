@@ -1,6 +1,6 @@
 # Global Ties KC — Program Tracker
 
-A web app for running IVLP and other exchange programs at Global Ties KC: per-project checklists from the IVLP Programmer Guide with automatic due dates, a Google Tasks–style to-do list across all projects, participant rosters, schedules, email drafts, Word itinerary export, and a Monday Meeting summary.
+A web app for running IVLP and other exchange programs at Global Ties KC: per-project checklists from the IVLP Programmer Guide with automatic due dates, a Google Tasks–style to-do list across all projects, participant rosters, schedules, email drafts, and Word itinerary export.
 
 - **Live site:** https://bpickert99.github.io/globalties/
 - **Stack:** React + TypeScript (Vite), Supabase (Postgres + auth), hosted on GitHub Pages.
